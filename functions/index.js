@@ -352,8 +352,12 @@ function mapTweetV2(tweet, includes) {
       ? `https://x.com/${handle}/status/${statusId}`
       : `https://x.com/i/status/${statusId}`,
     isRetweet: retweet,
+    repostedById: reposter?.id || (retweet ? tweet.author_id : null) || null,
     repostedByHandle: reposter?.username || null,
     repostedByName: reposter?.name || null,
+    repostedByAvatar: reposter?.profile_image_url
+      ? reposter.profile_image_url.replace("_normal", "_bigger")
+      : null,
     fetchedAt: FieldValue.serverTimestamp(),
   };
 }
@@ -402,8 +406,12 @@ function mapTweetV1(tweet) {
     media,
     url: `https://x.com/${handle}/status/${content.id_str || tweet.id_str}`,
     isRetweet: Boolean(source),
+    repostedById: reposter?.id_str || null,
     repostedByHandle: reposter?.screen_name || null,
     repostedByName: reposter?.name || null,
+    repostedByAvatar: reposter?.profile_image_url_https
+      ? reposter.profile_image_url_https.replace("_normal", "_bigger")
+      : null,
     fetchedAt: FieldValue.serverTimestamp(),
   };
 }

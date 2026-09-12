@@ -208,22 +208,32 @@ function renderPost(id, data) {
   const avatar =
     data.authorAvatar ||
     `https://abs.twimg.com/sticky/default_profile_images/default_profile_bigger.png`;
-  const badge = data.isRetweet
-    ? `<span class="badge">reposted${
-        data.repostedByHandle
-          ? ` by @${escapeHtml(data.repostedByHandle)}`
-          : ""
-      }</span>`
-    : "";
+  const reposterHandle = data.repostedByHandle || "";
+  const repostLine =
+    data.isRetweet && reposterHandle
+      ? `<p class="repost-line">
+          <span
+            class="author-hover reposter-hover"
+            data-author-id="${escapeHtml(data.repostedById || "")}"
+            data-author-handle="${escapeHtml(reposterHandle)}"
+            data-author-name="${escapeHtml(data.repostedByName || reposterHandle)}"
+            data-author-avatar="${escapeHtml(data.repostedByAvatar || "")}"
+          >@${escapeHtml(reposterHandle)}</span>
+          <span class="repost-label">reposted</span>
+        </p>`
+      : data.isRetweet
+        ? `<p class="repost-line"><span class="repost-label">reposted</span></p>`
+        : "";
 
   const url = data.url || `https://x.com/i/status/${id}`;
   return `<article class="card" data-id="${escapeHtml(id)}">
     <a class="card-hit" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" aria-label="View on X"></a>
+    ${repostLine}
     <div class="card-header">
       <div class="author-hover" data-author-id="${escapeHtml(data.authorId || "")}" data-author-handle="${escapeHtml(handle)}" data-author-name="${escapeHtml(data.authorName || handle)}" data-author-avatar="${escapeHtml(avatar)}">
         <img class="avatar" src="${escapeHtml(avatar)}" alt="" width="44" height="44" loading="lazy" referrerpolicy="no-referrer" />
         <div>
-          <p class="author-name">${escapeHtml(data.authorName || handle)}${badge}</p>
+          <p class="author-name">${escapeHtml(data.authorName || handle)}</p>
           <p class="author-meta">
             <a class="author-handle" href="https://x.com/${escapeHtml(handle)}" target="_blank" rel="noopener noreferrer">@${escapeHtml(handle)}</a>
             · <time datetime="${created ? created.toISOString() : ""}">${escapeHtml(formatRelative(created))}</time>
@@ -378,10 +388,10 @@ function scheduleAuthorHide() {
 }
 
 function bindAuthorHover(el) {
-  const trigger = el.querySelector(".author-hover");
-  if (!trigger) return;
-  trigger.addEventListener("mouseenter", () => scheduleAuthorShow(trigger));
-  trigger.addEventListener("mouseleave", scheduleAuthorHide);
+  for (const trigger of el.querySelectorAll(".author-hover")) {
+    trigger.addEventListener("mouseenter", () => scheduleAuthorShow(trigger));
+    trigger.addEventListener("mouseleave", scheduleAuthorHide);
+  }
 }
 
 const videoObserver = new IntersectionObserver(

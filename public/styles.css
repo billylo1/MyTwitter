@@ -370,6 +370,30 @@ body {
   vertical-align: middle;
 }
 
+.repost-line {
+  position: relative;
+  z-index: 2;
+  margin: 0 0 0.45rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.reposter-hover {
+  display: inline;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.reposter-hover:hover {
+  color: var(--link);
+  text-decoration: underline;
+}
+
+.repost-label {
+  margin-left: 0.2rem;
+}
+
 .text {
   margin: 0;
   white-space: pre-wrap;

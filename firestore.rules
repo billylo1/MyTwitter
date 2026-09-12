@@ -1,20 +1,49 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Public pointer to the default feed uid (no secrets).
+    function isMember() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/members/$(request.auth.uid));
+    }
+
+    function memberEnabled() {
+      return isMember()
+        && get(/databases/$(database)/documents/members/$(request.auth.uid)).data.enabled != false;
+    }
+
+    // Usage + last refreshed — members only.
     match /config/public {
-      allow read: if true;
+      allow read: if memberEnabled();
       allow write: if false;
     }
 
-    // Public feed posts for a user (v1: Billy). Later gate with auth.
+    // Allowlist / invites / oauth sessions — Admin SDK only.
+    match /config/{docId} {
+      allow read, write: if false;
+    }
+
+    match /invites/{code} {
+      allow read, write: if false;
+    }
+
+    match /oauthSessions/{state} {
+      allow read, write: if false;
+    }
+
+    // Member directory (no secrets).
+    match /members/{memberId} {
+      allow read: if memberEnabled();
+      allow write: if false;
+    }
+
+    // Feed posts/authors — members only.
     match /users/{uid}/posts/{postId} {
-      allow read: if true;
+      allow read: if memberEnabled();
       allow write: if false;
     }
 
     match /users/{uid}/authors/{authorId} {
-      allow read: if true;
+      allow read: if memberEnabled();
       allow write: if false;
     }
 

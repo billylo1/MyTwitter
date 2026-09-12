@@ -24,6 +24,16 @@
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/oauth/start",
+        "function": "startXAuth"
+      },
+      {
+        "source": "/oauth/callback",
+        "function": "xOAuthCallback"
+      }
     ]
   },
   "emulators": {

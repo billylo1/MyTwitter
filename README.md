@@ -1,53 +1,68 @@
-# MyTwitter — Following feed
+# MyTwitter — Family following feeds
 
-Public Firebase-hosted page that shows original posts from accounts you follow on X (newest first, no replies). Polls the home timeline every 10 minutes.
+Private Firebase-hosted feeds: each friend/family member signs in with **X**, then sees original posts from accounts they follow (newest first, no replies). Polls home timelines every 10 minutes.
 
 ## Stack
 
-- Firebase Hosting + Firestore + Cloud Functions (Gen 2)
-- X API v2 `homeTimeline` with OAuth 2.0 user context
-- Per-user Firestore paths so more accounts can be added later
+- Firebase Hosting + Firestore + Cloud Functions (Gen 2) + Auth (custom tokens)
+- X API OAuth 2.0 (`tweet.read`, `users.read`, `offline.access`)
+- Membership via handle allowlist and/or invite links
 
 ## One-time setup
 
-1. **X Developer Portal** (reuse your existing Basic app)
-   - Add callback URL: `http://127.0.0.1:8765/callback`
-   - Enable OAuth 2.0 with scopes: `tweet.read`, `users.read`, `offline.access`
-   - Copy Client ID and Client Secret
+1. **X Developer Portal** (pay-per-use app)
+   - Callback URLs (exact match required):
+     - `https://mytwitter-feed.web.app/oauth/callback` (web sign-in)
+     - `http://localhost:8765/callback` (optional local CLI)
+   - Website URL: `https://mytwitter-feed.web.app`
+   - User authentication settings: **OAuth 2.0**, type **Web App**
+   - Scopes: `tweet.read`, `users.read`, `offline.access`
 
-2. **Firebase service account**
-   - Console → Project settings → Service accounts → Generate new private key
-   - Save as `serviceAccount.json` in this repo root (gitignored)
+2. **Firebase**
+   - Enable **Authentication** (any provider can stay off — we use custom tokens from X OAuth)
+   - Authorized domains include `mytwitter-feed.web.app`
+   - Service account JSON → `serviceAccount.json` (gitignored)
 
 3. **Local env**
    ```bash
    cp .env.example .env
-   # fill X_CLIENT_ID and X_CLIENT_SECRET
+   # fill X_* secrets and SYNC_NOW_KEY (random string)
    npm install
    cd functions && npm install && cd ..
    ```
 
-4. **Connect your X account**
+4. **Bootstrap allowlist + admin member**
    ```bash
-   npm run oauth
+   node scripts/bootstrap-family.cjs
+   # optional: EXTRA_HANDLES=alice,bob ADMIN_HANDLE=billylo node scripts/bootstrap-family.cjs
    ```
 
-5. **Push secrets to Cloud Functions** (same Client ID/Secret)
+5. **Secrets + deploy**
    ```bash
    ./scripts/set-secrets.sh
-   npx -y firebase-tools@latest deploy --only functions --project mytwitter-feed
+   npx -y firebase-tools@latest deploy --project mytwitter-feed
    ```
 
-6. **First sync** (last 24 hours only)
+6. **Sign in**
+   - Open https://mytwitter-feed.web.app
+   - **Sign in with X** (allowlisted handles can join without an invite)
+   - Admins: info → **Create invite link** for family
+
+7. **Manual sync** (optional)
    ```bash
-   curl "https://us-central1-mytwitter-feed.cloudfunctions.net/syncNow"
+   curl "https://us-central1-mytwitter-feed.cloudfunctions.net/syncNow?key=$SYNC_NOW_KEY"
    ```
 
-Site: https://mytwitter-feed.web.app
+## Invites
+
+- Admin creates a link in the info dialog (or callable `createInvite`).
+- Share `https://mytwitter-feed.web.app/?invite=CODE`.
+- Recipient clicks Sign in with X; membership is created on successful OAuth.
 
 ## Notes
 
-- Basic plan has a ~10–15k monthly post-read cap. This feed alone can fill it (~500/day). `since_id` and `exclude=replies` are required.
-- Streaming / Account Activity webhooks do not deliver a following timeline on Basic.
+- Firestore feeds are **member-only** (not world-readable).
+- Firebase Auth uid = X user id.
+- Pay-per-use billing is shared across the project; usage is shown in the info dialog.
 - Do not commit `.env` or `serviceAccount.json`.
-- `serviceAccount.json` is already generated for this project (gitignored).
+- Local CLI: `npm run oauth` still works for emergencies; family should use web sign-in.

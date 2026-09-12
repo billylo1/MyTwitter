@@ -6,52 +6,79 @@
     <title>Following feed</title>
     <meta
       name="description"
-      content="Original posts from accounts I follow on X, newest first."
+      content="Private following feeds for friends and family."
     />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <header class="site-header">
-      <div class="inner">
-        <div class="header-bar">
-          <h1>Following feed</h1>
-          <button
-            type="button"
-            id="info-open"
-            class="info-btn"
-            aria-haspopup="dialog"
-            aria-controls="info-dialog"
-            title="Feed info"
-          >
-            <span aria-hidden="true">i</span>
-            <span class="sr-only">Feed info</span>
+    <div id="auth-gate" class="auth-gate hidden">
+      <div class="auth-card">
+        <h1>Following feed</h1>
+        <p id="auth-message" class="auth-message">
+          Sign in with X to view your following feed. Friends and family only.
+        </p>
+        <p id="auth-error" class="auth-error hidden" role="alert"></p>
+        <a id="sign-in-btn" class="btn primary" href="#">Sign in with X</a>
+      </div>
+    </div>
+
+    <div id="app-shell" class="hidden">
+      <header class="site-header">
+        <div class="inner">
+          <div class="header-bar">
+            <div class="header-titles">
+              <h1>Following feed</h1>
+              <p id="whoami" class="whoami"></p>
+            </div>
+            <div class="header-actions">
+              <label class="member-switch sr-only" for="member-select">View feed</label>
+              <select id="member-select" class="member-select" aria-label="View feed"></select>
+              <button
+                type="button"
+                id="info-open"
+                class="info-btn"
+                aria-haspopup="dialog"
+                aria-controls="info-dialog"
+                title="Feed info"
+              >
+                <span aria-hidden="true">i</span>
+                <span class="sr-only">Feed info</span>
+              </button>
+              <button type="button" id="sign-out-btn" class="text-btn">Sign out</button>
+            </div>
+          </div>
+          <p id="refreshed" class="refreshed" aria-live="polite"></p>
+        </div>
+      </header>
+
+      <dialog id="info-dialog" class="info-dialog" aria-labelledby="info-title">
+        <div class="info-dialog-header">
+          <h2 id="info-title">About this feed</h2>
+          <button type="button" id="info-close" class="info-close" aria-label="Close">
+            ×
           </button>
         </div>
-        <p id="refreshed" class="refreshed" aria-live="polite"></p>
-      </div>
-    </header>
+        <p class="info-line">
+          Original posts from accounts you follow. Newest first. No replies.
+        </p>
+        <p id="status" class="info-line status" aria-live="polite">Loading…</p>
+        <p id="usage" class="info-line usage" aria-live="polite"></p>
+        <p class="info-line muted">Updated from X about every 10 minutes.</p>
+        <div id="admin-panel" class="admin-panel hidden">
+          <hr class="info-hr" />
+          <p class="info-line"><strong>Admin</strong></p>
+          <button type="button" id="create-invite-btn" class="btn">Create invite link</button>
+          <p id="invite-result" class="info-line muted invite-result"></p>
+        </div>
+      </dialog>
 
-    <dialog id="info-dialog" class="info-dialog" aria-labelledby="info-title">
-      <div class="info-dialog-header">
-        <h2 id="info-title">About this feed</h2>
-        <button type="button" id="info-close" class="info-close" aria-label="Close">
-          ×
-        </button>
-      </div>
-      <p class="info-line">
-        Original posts from accounts I follow. Newest first. No replies.
-      </p>
-      <p id="status" class="info-line status" aria-live="polite">Loading…</p>
-      <p id="usage" class="info-line usage" aria-live="polite"></p>
-      <p class="info-line muted">Updated from X about every 10 minutes.</p>
-    </dialog>
-
-    <main class="inner">
-      <div id="feed" class="feed" role="feed" aria-busy="true"></div>
-      <p id="empty" class="empty hidden">
-        No posts yet. Connect X and run a sync to populate this feed.
-      </p>
-    </main>
+      <main class="inner">
+        <div id="feed" class="feed" role="feed" aria-busy="true"></div>
+        <p id="empty" class="empty hidden">
+          No posts yet. Sync runs about every 10 minutes after you connect.
+        </p>
+      </main>
+    </div>
 
     <script type="module" src="/app.js"></script>
   </body>

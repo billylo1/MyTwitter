@@ -1,32 +1,34 @@
 /**
- * MyTwitter Cloud Functions — poll each user's X home timeline.
- *
- * Supports:
- *   - OAuth 1.0a user tokens stored on users/{uid}.oauth1
- *   - OAuth 2.0 refresh tokens on users/{uid}.refreshToken
- *
- * Prefers v2 homeTimeline; falls back to v1.1 if v2 is blocked.
+ * MyTwitter Cloud Functions — X OAuth login, family membership, timeline sync.
  */
 
+const crypto = require("crypto");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { onRequest } = require("firebase-functions/v2/https");
+const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const { initializeApp } = require("firebase-admin/app");
+const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { TwitterApi } = require("twitter-api-v2");
 const logger = require("firebase-functions/logger");
 
 initializeApp();
 const db = getFirestore();
+const auth = getAuth();
 
 const xClientId = defineSecret("X_CLIENT_ID");
 const xClientSecret = defineSecret("X_CLIENT_SECRET");
 const xApiKey = defineSecret("X_API_KEY");
 const xApiSecret = defineSecret("X_API_SECRET");
 const xBearerToken = defineSecret("X_BEARER_TOKEN");
+const syncNowKey = defineSecret("SYNC_NOW_KEY");
 
 /** Pay-per-use post-read price (USD). Keep in sync with X console. */
 const POST_READ_PRICE_USD = 0.005;
+
+const SITE_URL = "https://mytwitter-feed.web.app";
+const OAUTH_CALLBACK_URL = `${SITE_URL}/oauth/callback`;
+const OAUTH_SESSION_TTL_MS = 10 * 60 * 1000;
 
 const TWEET_FIELDS = [
   "created_at",
@@ -39,12 +41,91 @@ const EXPANSIONS = ["author_id", "attachments.media_keys"];
 const MEDIA_FIELDS = ["url", "preview_image_url", "type", "width", "height"];
 const USER_FIELDS = ["name", "username", "profile_image_url"];
 
+function secretsFromEnv() {
+  return {
+    clientId: xClientId.value(),
+    clientSecret: xClientSecret.value(),
+    apiKey: xApiKey.value(),
+    apiSecret: xApiSecret.value(),
+    bearerToken: xBearerToken.value(),
+  };
+}
+
+const secretOpts = {
+  secrets: [xClientId, xClientSecret, xApiKey, xApiSecret, xBearerToken],
+  timeoutSeconds: 300,
+  memory: "512MiB",
+  region: "us-central1",
+};
+
+const oauthSecretOpts = {
+  secrets: [xClientId, xClientSecret],
+  timeoutSeconds: 60,
+  memory: "256MiB",
+  region: "us-central1",
+};
+
+function normalizeHandle(handle) {
+  return String(handle || "")
+    .trim()
+    .replace(/^@/, "")
+    .toLowerCase();
+}
+
+function randomToken(bytes = 24) {
+  return crypto.randomBytes(bytes).toString("base64url");
+}
+
+async function getAllowlist() {
+  const snap = await db.collection("config").doc("allowlist").get();
+  if (!snap.exists) return { handles: [], xUserIds: [] };
+  const data = snap.data() || {};
+  return {
+    handles: (data.handles || []).map(normalizeHandle),
+    xUserIds: (data.xUserIds || []).map(String),
+  };
+}
+
+async function isExistingMember(xUserId) {
+  const snap = await db.collection("members").doc(xUserId).get();
+  return snap.exists && snap.data()?.enabled !== false;
+}
+
+async function isAllowlisted(xUserId, handle) {
+  const list = await getAllowlist();
+  const h = normalizeHandle(handle);
+  return list.xUserIds.includes(String(xUserId)) || list.handles.includes(h);
+}
+
+async function consumeInvite(code, xUserId) {
+  if (!code) return false;
+  const ref = db.collection("invites").doc(String(code));
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return false;
+    const data = snap.data();
+    if (data.active === false) return false;
+    if (data.expiresAt && data.expiresAt.toMillis() < Date.now()) return false;
+    const used = Number(data.usedCount || 0);
+    const max = Number(data.maxUses || 1);
+    if (used >= max) return false;
+    tx.set(
+      ref,
+      {
+        usedCount: used + 1,
+        lastRedeemedBy: xUserId,
+        lastRedeemedAt: FieldValue.serverTimestamp(),
+        active: used + 1 >= max ? false : data.active !== false,
+      },
+      { merge: true }
+    );
+    return true;
+  });
+}
+
 async function getUserClient(userDoc, secrets) {
   const data = userDoc.data();
 
-  // Prefer OAuth 2.0 when we have a refresh token (pay-per-use / Basic).
-  // Only use OAuth 1.0a when authType is explicitly oauth1, or when there
-  // is no refresh token but oauth1 credentials exist.
   const preferOauth1 =
     data?.authType === "oauth1" ||
     (!data?.refreshToken && data?.oauth1?.accessToken);
@@ -249,7 +330,6 @@ async function syncViaV1(client, userDoc, sinceId) {
   const postsCol = userDoc.ref.collection("posts");
   const authorsCol = userDoc.ref.collection("authors");
 
-  // First sync: keep only last 24h
   const cutoff = sinceId ? 0 : Date.now() - 24 * 60 * 60 * 1000;
 
   for (const tweet of tweets) {
@@ -346,7 +426,6 @@ async function fetchAndStoreUsage(secrets) {
     const prevCycle = Number(prev.cyclePostsRead ?? prev.postsRead ?? 0);
     let priorCyclesPostsRead = Number(prev.priorCyclesPostsRead ?? 0);
 
-    // Billing cycle reset: X project_usage drops; fold the finished cycle in.
     if (prevCycle > 0 && cyclePostsRead < prevCycle) {
       priorCyclesPostsRead += prevCycle;
     }
@@ -445,22 +524,264 @@ async function runSyncAll(secrets) {
   return { users: usersSnap.size, results, usage };
 }
 
-const secretOpts = {
-  secrets: [xClientId, xClientSecret, xApiKey, xApiSecret, xBearerToken],
-  timeoutSeconds: 300,
-  memory: "512MiB",
-  region: "us-central1",
-};
+async function upsertMemberAndUser({
+  xUserId,
+  handle,
+  name,
+  avatar,
+  accessToken,
+  refreshToken,
+  expiresIn,
+  role,
+}) {
+  const memberRef = db.collection("members").doc(xUserId);
+  const memberSnap = await memberRef.get();
+  const existingRole = memberSnap.exists ? memberSnap.data()?.role : null;
+  const resolvedRole = existingRole || role || "member";
 
-function secretsFromEnv() {
-  return {
-    clientId: xClientId.value(),
-    clientSecret: xClientSecret.value(),
-    apiKey: xApiKey.value(),
-    apiSecret: xApiSecret.value(),
-    bearerToken: xBearerToken.value(),
-  };
+  await memberRef.set(
+    {
+      handle: normalizeHandle(handle),
+      name: name || handle,
+      avatar: avatar || null,
+      role: resolvedRole,
+      enabled: true,
+      xUserId,
+      joinedAt: memberSnap.exists
+        ? memberSnap.data()?.joinedAt || FieldValue.serverTimestamp()
+        : FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  await db
+    .collection("users")
+    .doc(xUserId)
+    .set(
+      {
+        enabled: true,
+        authType: "oauth2",
+        accessBlocked: false,
+        oauth1: FieldValue.delete(),
+        xUserId,
+        firebaseUid: xUserId,
+        handle: normalizeHandle(handle),
+        name: name || handle,
+        avatar: avatar || null,
+        accessToken,
+        refreshToken,
+        tokenExpiresAt: expiresIn
+          ? Timestamp.fromMillis(Date.now() + expiresIn * 1000)
+          : null,
+        publicFeed: true,
+        connectedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
 }
+
+// --- Auth endpoints ---
+
+exports.startXAuth = onRequest(oauthSecretOpts, async (req, res) => {
+  try {
+    const invite = (req.query.invite || "").toString().trim() || null;
+    const client = new TwitterApi({
+      clientId: xClientId.value(),
+      clientSecret: xClientSecret.value(),
+    });
+    const { url, codeVerifier, state } = client.generateOAuth2AuthLink(
+      OAUTH_CALLBACK_URL,
+      {
+        scope: ["tweet.read", "users.read", "offline.access"],
+      }
+    );
+
+    await db
+      .collection("oauthSessions")
+      .doc(state)
+      .set({
+        codeVerifier,
+        invite,
+        createdAt: FieldValue.serverTimestamp(),
+        expiresAt: Timestamp.fromMillis(Date.now() + OAUTH_SESSION_TTL_MS),
+      });
+
+    res.redirect(302, url);
+  } catch (err) {
+    logger.error("startXAuth failed", err);
+    res
+      .status(500)
+      .send(`Could not start X sign-in: ${escapeHtml(err.message)}`);
+  }
+});
+
+exports.xOAuthCallback = onRequest(
+  { ...oauthSecretOpts, secrets: [xClientId, xClientSecret, xApiKey, xApiSecret, xBearerToken] },
+  async (req, res) => {
+    const fail = (msg) => {
+      const u = new URL(SITE_URL);
+      u.searchParams.set("authError", msg);
+      res.redirect(302, u.toString());
+    };
+
+    try {
+      const code = req.query.code;
+      const state = req.query.state;
+      const oauthError = req.query.error;
+      if (oauthError) {
+        fail(String(oauthError));
+        return;
+      }
+      if (!code || !state) {
+        fail("missing_oauth_params");
+        return;
+      }
+
+      const sessionRef = db.collection("oauthSessions").doc(String(state));
+      const sessionSnap = await sessionRef.get();
+      if (!sessionSnap.exists) {
+        fail("expired_or_invalid_session");
+        return;
+      }
+      const session = sessionSnap.data();
+      await sessionRef.delete();
+
+      if (
+        session.expiresAt &&
+        session.expiresAt.toMillis &&
+        session.expiresAt.toMillis() < Date.now()
+      ) {
+        fail("expired_session");
+        return;
+      }
+
+      const client = new TwitterApi({
+        clientId: xClientId.value(),
+        clientSecret: xClientSecret.value(),
+      });
+      const {
+        client: loggedClient,
+        accessToken,
+        refreshToken,
+        expiresIn,
+      } = await client.loginWithOAuth2({
+        code: String(code),
+        codeVerifier: session.codeVerifier,
+        redirectUri: OAUTH_CALLBACK_URL,
+      });
+
+      const me = await loggedClient.v2.me({
+        "user.fields": ["name", "username", "profile_image_url"],
+      });
+      const xUserId = me.data.id;
+      const handle = me.data.username;
+      const name = me.data.name || handle;
+      const avatar = me.data.profile_image_url
+        ? me.data.profile_image_url.replace("_normal", "_bigger")
+        : null;
+
+      const alreadyMember = await isExistingMember(xUserId);
+      const allowlisted = await isAllowlisted(xUserId, handle);
+      let invited = false;
+      if (!alreadyMember && !allowlisted && session.invite) {
+        invited = await consumeInvite(session.invite, xUserId);
+      }
+
+      if (!alreadyMember && !allowlisted && !invited) {
+        fail("not_invited");
+        return;
+      }
+
+      const allowlist = await getAllowlist();
+      const isBootstrapAdmin =
+        allowlist.handles[0] &&
+        normalizeHandle(handle) === allowlist.handles[0];
+      const role = isBootstrapAdmin ? "admin" : "member";
+
+      await upsertMemberAndUser({
+        xUserId,
+        handle,
+        name,
+        avatar,
+        accessToken,
+        refreshToken,
+        expiresIn,
+        role: alreadyMember ? undefined : role,
+      });
+
+      // Fire-and-forget first sync for this user.
+      const secrets = secretsFromEnv();
+      const userDoc = await db.collection("users").doc(xUserId).get();
+      syncUser(userDoc, secrets)
+        .then(() =>
+          db.collection("config").doc("public").set(
+            { lastRefreshedAt: FieldValue.serverTimestamp() },
+            { merge: true }
+          )
+        )
+        .catch((err) =>
+          logger.warn("post-oauth sync failed", { xUserId, error: err.message })
+        );
+
+      const customToken = await auth.createCustomToken(xUserId, {
+        handle: normalizeHandle(handle),
+      });
+      const u = new URL(SITE_URL);
+      u.searchParams.set("token", customToken);
+      res.redirect(302, u.toString());
+    } catch (err) {
+      logger.error("xOAuthCallback failed", {
+        error: err.message,
+        data: err.data,
+      });
+      fail("oauth_failed");
+    }
+  }
+);
+
+exports.createInvite = onCall(
+  { region: "us-central1" },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError("unauthenticated", "Sign in required");
+    }
+    const memberSnap = await db
+      .collection("members")
+      .doc(request.auth.uid)
+      .get();
+    if (!memberSnap.exists || memberSnap.data()?.role !== "admin") {
+      throw new HttpsError("permission-denied", "Admin only");
+    }
+
+    const maxUses = Math.min(
+      Math.max(Number(request.data?.maxUses || 1), 1),
+      50
+    );
+    const days = Math.min(Math.max(Number(request.data?.days || 14), 1), 90);
+    const code = randomToken(9);
+    const expiresAt = Timestamp.fromMillis(
+      Date.now() + days * 24 * 60 * 60 * 1000
+    );
+
+    await db.collection("invites").doc(code).set({
+      createdBy: request.auth.uid,
+      maxUses,
+      usedCount: 0,
+      expiresAt,
+      active: true,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    return {
+      code,
+      url: `${SITE_URL}/?invite=${code}`,
+      maxUses,
+      expiresAt: expiresAt.toDate().toISOString(),
+    };
+  }
+);
 
 exports.syncTimeline = onSchedule(
   {
@@ -473,18 +794,32 @@ exports.syncTimeline = onSchedule(
   }
 );
 
-exports.syncNow = onRequest(secretOpts, async (req, res) => {
-  const expected = process.env.SYNC_NOW_KEY;
-  if (expected && req.query.key !== expected) {
-    res.status(403).json({ error: "forbidden" });
-    return;
-  }
+exports.syncNow = onRequest(
+  {
+    ...secretOpts,
+    secrets: [...secretOpts.secrets, syncNowKey],
+  },
+  async (req, res) => {
+    const expected = syncNowKey.value();
+    if (!expected || req.query.key !== expected) {
+      res.status(403).json({ error: "forbidden" });
+      return;
+    }
 
-  try {
-    const summary = await runSyncAll(secretsFromEnv());
-    res.json({ ok: true, ...summary });
-  } catch (err) {
-    logger.error("syncNow failed", err);
-    res.status(500).json({ ok: false, error: String(err.message || err) });
+    try {
+      const summary = await runSyncAll(secretsFromEnv());
+      res.json({ ok: true, ...summary });
+    } catch (err) {
+      logger.error("syncNow failed", err);
+      res.status(500).json({ ok: false, error: String(err.message || err) });
+    }
   }
-});
+);
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}

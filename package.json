@@ -1,0 +1,14 @@
+{
+  "name": "mytwitter",
+  "private": true,
+  "description": "Personal following feed from X, hosted on Firebase",
+  "scripts": {
+    "oauth": "node scripts/x-oauth.cjs",
+    "deploy": "npx -y firebase-tools@latest deploy --project mytwitter-feed",
+    "emulators": "npx -y firebase-tools@latest emulators:start --project mytwitter-feed"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.2",
+    "twitter-api-v2": "^1.22.0"
+  }
+}

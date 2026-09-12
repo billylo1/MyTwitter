@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Following feed</title>
+    <meta
+      name="description"
+      content="Original posts from accounts I follow on X, newest first."
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="inner">
+        <h1>Following feed</h1>
+        <p class="subtitle">
+          Original posts from accounts I follow. Newest first. No replies.
+        </p>
+        <p id="status" class="status" aria-live="polite">Loading…</p>
+        <p id="usage" class="usage" aria-live="polite"></p>
+      </div>
+    </header>
+
+    <main class="inner">
+      <div id="feed" class="feed" role="feed" aria-busy="true"></div>
+      <p id="empty" class="empty hidden">
+        No posts yet. Connect X and run a sync to populate this feed.
+      </p>
+    </main>
+
+    <footer class="site-footer inner">
+      <p>Updated from X about every 10 minutes.</p>
+    </footer>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

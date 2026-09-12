@@ -14,7 +14,6 @@ import {
   onSnapshot,
   doc,
   getDoc,
-  getDocs,
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 import {
   getFunctions,
@@ -44,7 +43,6 @@ const authErrorEl = document.getElementById("auth-error");
 const signInBtn = document.getElementById("sign-in-btn");
 const signOutBtn = document.getElementById("sign-out-btn");
 const whoamiEl = document.getElementById("whoami");
-const memberSelectEl = document.getElementById("member-select");
 const adminPanelEl = document.getElementById("admin-panel");
 const createInviteBtn = document.getElementById("create-invite-btn");
 const inviteResultEl = document.getElementById("invite-result");
@@ -58,8 +56,6 @@ const usageEl = document.getElementById("usage");
 let feedUnsub = null;
 let configUnsub = null;
 let currentMember = null;
-/** @type {Map<string, object>} */
-const membersById = new Map();
 
 function formatUsd(amount) {
   if (typeof amount !== "number" || Number.isNaN(amount)) return "—";
@@ -88,6 +84,7 @@ function formatRelative(date) {
   const minute = 60_000;
   const hour = 60 * minute;
   const day = 24 * hour;
+  if (abs < minute) return "just now";
   if (abs < hour) return rtf.format(Math.round(ms / minute), "minute");
   if (abs < day) return rtf.format(Math.round(ms / hour), "hour");
   if (abs < 30 * day) return rtf.format(Math.round(ms / day), "day");
@@ -120,9 +117,12 @@ function renderRefreshed(ts) {
   const date = ts?.toDate?.() || (ts instanceof Date ? ts : null);
   if (!date) {
     refreshedEl.textContent = "";
+    refreshedEl.classList.add("hidden");
     return;
   }
-  refreshedEl.textContent = `Last refreshed ${formatRelative(date)} · ${formatAbsolute(date)}`;
+  refreshedEl.classList.remove("hidden");
+  refreshedEl.textContent = formatRelative(date);
+  refreshedEl.title = formatAbsolute(date);
 }
 
 function renderUsage(usage) {
@@ -173,52 +173,251 @@ function subscribePublicConfig() {
   );
 }
 
+function renderMediaItem(item) {
+  const type = item?.type || "photo";
+  const poster = item.previewUrl || item.url || "";
+  const alt = escapeHtml(item.alt || "");
+  if ((type === "video" || type === "animated_gif") && item.videoUrl) {
+    const src = escapeHtml(item.videoUrl);
+    const posterAttr = poster ? ` poster="${escapeHtml(poster)}"` : "";
+    if (type === "animated_gif") {
+      return `<video class="media-gif" data-src="${src}"${posterAttr} autoplay muted loop playsinline></video>`;
+    }
+    return `<video class="media-video" data-src="${src}"${posterAttr} muted playsinline controls preload="metadata" controlslist="nodownload"></video>`;
+  }
+  if (!poster) return "";
+  return `<img src="${escapeHtml(poster)}" alt="${alt}" loading="lazy" referrerpolicy="no-referrer" />`;
+}
+
+function renderMedia(data) {
+  const items =
+    Array.isArray(data.media) && data.media.length
+      ? data.media
+      : (Array.isArray(data.mediaUrls) ? data.mediaUrls : []).map((url) => ({
+          type: "photo",
+          url,
+          previewUrl: url,
+        }));
+  if (!items.length) return "";
+  return `<div class="media">${items.map(renderMediaItem).join("")}</div>`;
+}
+
 function renderPost(id, data) {
   const created = data.createdAt?.toDate?.() || null;
   const handle = data.authorHandle || "unknown";
   const avatar =
     data.authorAvatar ||
     `https://abs.twimg.com/sticky/default_profile_images/default_profile_bigger.png`;
-  const media = Array.isArray(data.mediaUrls) ? data.mediaUrls : [];
-  const mediaHtml = media.length
-    ? `<div class="media">${media
-        .map(
-          (src) =>
-            `<img src="${escapeHtml(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" />`
-        )
-        .join("")}</div>`
+  const badge = data.isRetweet
+    ? `<span class="badge">reposted${
+        data.repostedByHandle
+          ? ` by @${escapeHtml(data.repostedByHandle)}`
+          : ""
+      }</span>`
     : "";
-  const badge = data.isRetweet ? `<span class="badge">reposted</span>` : "";
 
+  const url = data.url || `https://x.com/i/status/${id}`;
   return `<article class="card" data-id="${escapeHtml(id)}">
+    <a class="card-hit" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" aria-label="View on X"></a>
     <div class="card-header">
-      <img class="avatar" src="${escapeHtml(avatar)}" alt="" width="44" height="44" loading="lazy" referrerpolicy="no-referrer" />
-      <div>
-        <p class="author-name">${escapeHtml(data.authorName || handle)}${badge}</p>
-        <p class="author-meta">
-          <a href="https://x.com/${escapeHtml(handle)}" target="_blank" rel="noopener noreferrer">@${escapeHtml(handle)}</a>
-          · <time datetime="${created ? created.toISOString() : ""}">${escapeHtml(formatRelative(created))}</time>
-        </p>
+      <div class="author-hover" data-author-id="${escapeHtml(data.authorId || "")}" data-author-handle="${escapeHtml(handle)}" data-author-name="${escapeHtml(data.authorName || handle)}" data-author-avatar="${escapeHtml(avatar)}">
+        <img class="avatar" src="${escapeHtml(avatar)}" alt="" width="44" height="44" loading="lazy" referrerpolicy="no-referrer" />
+        <div>
+          <p class="author-name">${escapeHtml(data.authorName || handle)}${badge}</p>
+          <p class="author-meta">
+            <a class="author-handle" href="https://x.com/${escapeHtml(handle)}" target="_blank" rel="noopener noreferrer">@${escapeHtml(handle)}</a>
+            · <time datetime="${created ? created.toISOString() : ""}">${escapeHtml(formatRelative(created))}</time>
+          </p>
+        </div>
       </div>
     </div>
     <p class="text">${linkify(data.text || "")}</p>
-    ${mediaHtml}
-    <div class="card-footer">
-      <a href="${escapeHtml(data.url || `https://x.com/i/status/${id}`)}" target="_blank" rel="noopener noreferrer">View on X</a>
-    </div>
+    ${renderMedia(data)}
   </article>`;
 }
 
 function createPostElement(id, data) {
   const wrap = document.createElement("div");
   wrap.innerHTML = renderPost(id, data).trim();
-  return wrap.firstElementChild;
+  const el = wrap.firstElementChild;
+  for (const video of el.querySelectorAll("video[data-src]")) {
+    video.referrerPolicy = "no-referrer";
+    video.src = video.dataset.src;
+    video.removeAttribute("data-src");
+  }
+  bindAuthorHover(el);
+  return el;
+}
+
+const authorCardEl = document.getElementById("author-card");
+const authorCardAvatar = document.getElementById("author-card-avatar");
+const authorCardName = document.getElementById("author-card-name");
+const authorCardHandle = document.getElementById("author-card-handle");
+const authorCardBio = document.getElementById("author-card-bio");
+const authorCardStatus = document.getElementById("author-card-status");
+const authorCardFollow = document.getElementById("author-card-follow");
+/** @type {Map<string, object>} */
+const authorCardCache = new Map();
+let authorShowTimer = 0;
+let authorHideTimer = 0;
+let authorFetchGen = 0;
+/** @type {object | null} */
+let authorCardState = null;
+
+function authorCacheKey(handle, userId) {
+  return String(userId || handle || "").toLowerCase();
+}
+
+function hideAuthorCard() {
+  window.clearTimeout(authorShowTimer);
+  window.clearTimeout(authorHideTimer);
+  authorCardEl.classList.add("hidden");
+  authorCardState = null;
+}
+
+function placeAuthorCard(trigger) {
+  const gap = 8;
+  const r = trigger.getBoundingClientRect();
+  authorCardEl.classList.remove("hidden");
+  const cr = authorCardEl.getBoundingClientRect();
+  let top = r.bottom + gap;
+  let left = r.left;
+  if (top + cr.height > window.innerHeight - gap) {
+    top = r.top - cr.height - gap;
+  }
+  if (left + cr.width > window.innerWidth - gap) {
+    left = window.innerWidth - cr.width - gap;
+  }
+  if (left < gap) left = gap;
+  if (top < gap) top = gap;
+  authorCardEl.style.top = `${Math.round(top)}px`;
+  authorCardEl.style.left = `${Math.round(left)}px`;
+}
+
+function renderAuthorCard(data, { pending = false } = {}) {
+  const handle = data.handle || "";
+  authorCardAvatar.src =
+    data.avatar ||
+    "https://abs.twimg.com/sticky/default_profile_images/default_profile_bigger.png";
+  authorCardName.innerHTML = `${escapeHtml(data.name || handle)}${
+    data.verified ? `<span class="verified" title="Verified">✔</span>` : ""
+  }`;
+  authorCardHandle.textContent = handle ? `@${handle}` : "";
+  authorCardBio.textContent = data.description || "";
+  authorCardBio.classList.toggle("hidden", !data.description);
+  if (data.error) {
+    authorCardStatus.textContent = data.error;
+    authorCardStatus.classList.remove("hidden");
+  } else {
+    authorCardStatus.textContent = "";
+    authorCardStatus.classList.add("hidden");
+  }
+
+  const isSelf = Boolean(data.isSelf);
+  authorCardFollow.classList.toggle("hidden", isSelf);
+  authorCardFollow.disabled = pending || isSelf || !data.id;
+  authorCardFollow.classList.toggle("is-following", Boolean(data.following));
+  authorCardFollow.textContent = data.following ? "Following" : "Follow";
+  authorCardState = data;
+}
+
+async function loadAuthorCard(seed, trigger) {
+  const gen = ++authorFetchGen;
+  const cacheKey = authorCacheKey(seed.handle, seed.id);
+  const cached = authorCardCache.get(cacheKey);
+  if (cached) {
+    renderAuthorCard(cached);
+    return;
+  }
+  renderAuthorCard({ ...seed, description: "" }, { pending: true });
+  try {
+    const getAuthorCard = httpsCallable(functions, "getAuthorCard");
+    const result = await getAuthorCard({
+      userId: seed.id || undefined,
+      handle: seed.handle || undefined,
+    });
+    if (gen !== authorFetchGen) return;
+    const data = result.data;
+    authorCardCache.set(authorCacheKey(data.handle, data.id), data);
+    renderAuthorCard(data);
+    if (trigger) placeAuthorCard(trigger);
+  } catch (err) {
+    if (gen !== authorFetchGen) return;
+    const message =
+      err.code === "functions/failed-precondition"
+        ? err.message
+        : "Could not load this account.";
+    renderAuthorCard({ ...seed, error: message }, { pending: false });
+  }
+}
+
+function seedFromTrigger(trigger) {
+  return {
+    id: trigger.dataset.authorId || "",
+    handle: trigger.dataset.authorHandle || "",
+    name: trigger.dataset.authorName || "",
+    avatar: trigger.dataset.authorAvatar || "",
+  };
+}
+
+function scheduleAuthorShow(trigger) {
+  window.clearTimeout(authorHideTimer);
+  window.clearTimeout(authorShowTimer);
+  authorShowTimer = window.setTimeout(() => {
+    loadAuthorCard(seedFromTrigger(trigger), trigger).then(() =>
+      placeAuthorCard(trigger)
+    );
+    placeAuthorCard(trigger);
+  }, 380);
+}
+
+function scheduleAuthorHide() {
+  window.clearTimeout(authorShowTimer);
+  window.clearTimeout(authorHideTimer);
+  authorHideTimer = window.setTimeout(hideAuthorCard, 220);
+}
+
+function bindAuthorHover(el) {
+  const trigger = el.querySelector(".author-hover");
+  if (!trigger) return;
+  trigger.addEventListener("mouseenter", () => scheduleAuthorShow(trigger));
+  trigger.addEventListener("mouseleave", scheduleAuthorHide);
+}
+
+const videoObserver = new IntersectionObserver(
+  (entries) => {
+    for (const entry of entries) {
+      const video = entry.target;
+      if (!(video instanceof HTMLVideoElement)) continue;
+      if (entry.isIntersecting) {
+        video.play().catch(() => {});
+      } else {
+        video.pause();
+      }
+    }
+  },
+  { threshold: 0.55 }
+);
+
+function watchCardVideos(el) {
+  for (const video of el.querySelectorAll("video.media-video")) {
+    videoObserver.observe(video);
+  }
+}
+
+function unwatchCardVideos(el) {
+  for (const video of el.querySelectorAll("video")) {
+    videoObserver.unobserve(video);
+  }
 }
 
 function subscribeFeed(uid) {
   if (feedUnsub) {
     feedUnsub();
     feedUnsub = null;
+  }
+  for (const video of feedEl.querySelectorAll("video")) {
+    videoObserver.unobserve(video);
   }
   feedEl.innerHTML = "";
   feedEl.setAttribute("aria-busy", "true");
@@ -245,7 +444,10 @@ function subscribeFeed(uid) {
     feedEl.setAttribute("aria-busy", "false");
 
     if (snap.empty) {
-      for (const el of cards.values()) el.remove();
+      for (const el of cards.values()) {
+        unwatchCardVideos(el);
+        el.remove();
+      }
       cards.clear();
       syncEmptyState(true);
       return;
@@ -257,7 +459,11 @@ function subscribeFeed(uid) {
       const id = change.doc.id;
 
       if (change.type === "removed") {
-        cards.get(id)?.remove();
+        const gone = cards.get(id);
+        if (gone) {
+          unwatchCardVideos(gone);
+          gone.remove();
+        }
         cards.delete(id);
         continue;
       }
@@ -267,8 +473,10 @@ function subscribeFeed(uid) {
       const prev = cards.get(id);
 
       if (prev) {
+        unwatchCardVideos(prev);
         prev.replaceWith(next);
       }
+      watchCardVideos(next);
       cards.set(id, next);
     }
 
@@ -352,32 +560,6 @@ async function consumeAuthParams() {
   }
 }
 
-function populateMemberSelect(selectedUid) {
-  const members = [...membersById.values()].sort((a, b) =>
-    String(a.handle || "").localeCompare(String(b.handle || ""))
-  );
-  memberSelectEl.innerHTML = members
-    .map((m) => {
-      const id = m.xUserId || m.id;
-      const label =
-        id === auth.currentUser?.uid
-          ? `@${m.handle} (you)`
-          : `@${m.handle || id}`;
-      return `<option value="${escapeHtml(id)}"${id === selectedUid ? " selected" : ""}>${escapeHtml(label)}</option>`;
-    })
-    .join("");
-}
-
-async function loadMembers() {
-  const snap = await getDocs(collection(db, "members"));
-  membersById.clear();
-  snap.forEach((d) => {
-    const data = d.data();
-    if (data.enabled === false) return;
-    membersById.set(d.id, { id: d.id, ...data });
-  });
-}
-
 async function enterApp(user) {
   authGateEl.classList.add("hidden");
   appShellEl.classList.remove("hidden");
@@ -392,22 +574,19 @@ async function enterApp(user) {
   }
 
   currentMember = { id: memberSnap.id, ...memberSnap.data() };
-  whoamiEl.textContent = `Signed in as @${currentMember.handle || user.uid}`;
+  whoamiEl.textContent = `@${currentMember.handle || user.uid}`;
   adminPanelEl.classList.toggle("hidden", currentMember.role !== "admin");
 
-  await loadMembers();
-
   const params = new URLSearchParams(location.search);
-  const fromQuery = params.get("uid");
-  const feedUid =
-    fromQuery && membersById.has(fromQuery)
-      ? fromQuery
-      : user.uid;
+  if (params.has("uid")) {
+    params.delete("uid");
+    const next = `${location.pathname}${params.toString() ? `?${params}` : ""}`;
+    history.replaceState({}, "", next);
+  }
 
-  populateMemberSelect(feedUid);
   subscribePublicConfig();
   statusEl.textContent = "Connecting…";
-  subscribeFeed(feedUid);
+  subscribeFeed(user.uid);
 }
 
 function wireUi() {
@@ -430,15 +609,57 @@ function wireUi() {
 
   signOutBtn.addEventListener("click", () => signOut(auth));
 
-  memberSelectEl.addEventListener("change", () => {
-    const uid = memberSelectEl.value;
-    const params = new URLSearchParams(location.search);
-    if (uid === auth.currentUser?.uid) params.delete("uid");
-    else params.set("uid", uid);
-    const next = `${location.pathname}${params.toString() ? `?${params}` : ""}`;
-    history.replaceState({}, "", next);
-    subscribeFeed(uid);
-  });
+  if (authorCardEl && authorCardFollow) {
+    authorCardEl.addEventListener("mouseenter", () => {
+      window.clearTimeout(authorHideTimer);
+    });
+    authorCardEl.addEventListener("mouseleave", scheduleAuthorHide);
+    authorCardFollow.addEventListener("mouseenter", () => {
+      if (authorCardFollow.classList.contains("is-following")) {
+        authorCardFollow.textContent = "Unfollow";
+      }
+    });
+    authorCardFollow.addEventListener("mouseleave", () => {
+      if (authorCardFollow.classList.contains("is-following")) {
+        authorCardFollow.textContent = "Following";
+      }
+    });
+    authorCardFollow.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const current = authorCardState;
+      if (!current?.id || current.isSelf) return;
+      const nextFollow = !current.following;
+      authorCardFollow.disabled = true;
+      try {
+        const setFollowing = httpsCallable(functions, "setFollowing");
+        await setFollowing({ userId: current.id, follow: nextFollow });
+        const updated = { ...current, following: nextFollow, error: "" };
+        authorCardCache.set(
+          authorCacheKey(updated.handle, updated.id),
+          updated
+        );
+        renderAuthorCard(updated);
+      } catch (err) {
+        const message =
+          err.code === "functions/failed-precondition"
+            ? err.message
+            : "Could not update follow.";
+        renderAuthorCard({ ...current, error: message });
+      }
+    });
+  }
+
+  feedEl.addEventListener(
+    "play",
+    (event) => {
+      if (event.target.tagName !== "VIDEO") return;
+      for (const video of feedEl.querySelectorAll("video.media-video")) {
+        if (video !== event.target) video.pause();
+      }
+    },
+    true
+  );
 
   createInviteBtn.addEventListener("click", async () => {
     inviteResultEl.textContent = "Creating…";

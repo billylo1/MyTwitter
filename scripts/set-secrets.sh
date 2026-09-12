@@ -13,5 +13,11 @@ if [[ -z "${SYNC_NOW_KEY:-}" ]]; then
   exit 1
 fi
 printf '%s' "$SYNC_NOW_KEY" | npx -y firebase-tools@latest functions:secrets:set SYNC_NOW_KEY --project mytwitter-feed --data-file=-
+ADMIN_JSON="${GOOGLE_APPLICATION_CREDENTIALS:-$ROOT/serviceAccount.json}"
+if [[ ! -f "$ADMIN_JSON" ]]; then
+  echo "Missing Firebase admin JSON at $ADMIN_JSON" >&2
+  exit 1
+fi
+printf '%s' "$(cat "$ADMIN_JSON")" | npx -y firebase-tools@latest functions:secrets:set ADMIN_SDK_CREDENTIALS --project mytwitter-feed --data-file=-
 echo "Secrets updated. Redeploy functions:"
 echo "  npx -y firebase-tools@latest deploy --only functions --project mytwitter-feed"

@@ -4,7 +4,7 @@
  *
  * Prerequisites:
  *   1. In the X Developer Portal, add callback: http://127.0.0.1:8765/callback
- *   2. Scopes: tweet.read, users.read, offline.access
+ *   2. Scopes: tweet.read, users.read, follows.read, follows.write, offline.access
  *   3. Copy .env.example → .env and fill X_CLIENT_ID / X_CLIENT_SECRET
  *   4. Download a service account JSON for mytwitter-feed and set
  *      GOOGLE_APPLICATION_CREDENTIALS (or place it at ./serviceAccount.json)
@@ -83,7 +83,7 @@ async function main() {
   const { url, codeVerifier, state } = client.generateOAuth2AuthLink(
     CALLBACK_URL,
     {
-      scope: ["tweet.read", "users.read", "offline.access"],
+        scope: OAUTH_SCOPES,
     }
   );
 

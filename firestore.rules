@@ -11,6 +11,10 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/members/$(request.auth.uid)).data.enabled != false;
     }
 
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
     // Usage + last refreshed — members only.
     match /config/public {
       allow read: if memberEnabled();
@@ -30,20 +34,20 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Member directory (no secrets).
+    // Own membership only (no family directory).
     match /members/{memberId} {
-      allow read: if memberEnabled();
+      allow read: if memberEnabled() && isOwner(memberId);
       allow write: if false;
     }
 
-    // Feed posts/authors — members only.
+    // Own feed only.
     match /users/{uid}/posts/{postId} {
-      allow read: if memberEnabled();
+      allow read: if memberEnabled() && isOwner(uid);
       allow write: if false;
     }
 
     match /users/{uid}/authors/{authorId} {
-      allow read: if memberEnabled();
+      allow read: if memberEnabled() && isOwner(uid);
       allow write: if false;
     }
 

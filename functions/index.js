@@ -6,7 +6,7 @@ const crypto = require("crypto");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
-const { initializeApp } = require("firebase-admin/app");
+const { initializeApp, cert, getApps } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { TwitterApi } = require("twitter-api-v2");
@@ -22,6 +22,18 @@ const xApiKey = defineSecret("X_API_KEY");
 const xApiSecret = defineSecret("X_API_SECRET");
 const xBearerToken = defineSecret("X_BEARER_TOKEN");
 const syncNowKey = defineSecret("SYNC_NOW_KEY");
+const firebaseAdminCreds = defineSecret("ADMIN_SDK_CREDENTIALS");
+
+/** Sign custom tokens with the Admin SDK private key (avoids signBlob IAM on Gen2). */
+function getSigningAuth() {
+  const name = "token-signer";
+  const existing = getApps().find((a) => a.name === name);
+  if (existing) return getAuth(existing);
+  const raw = firebaseAdminCreds.value();
+  const cred = typeof raw === "string" ? JSON.parse(raw) : raw;
+  const signerApp = initializeApp({ credential: cert(cred) }, name);
+  return getAuth(signerApp);
+}
 
 /** Pay-per-use post-read price (USD). Keep in sync with X console. */
 const POST_READ_PRICE_USD = 0.005;
@@ -36,10 +48,50 @@ const TWEET_FIELDS = [
   "attachments",
   "referenced_tweets",
   "entities",
+  "note_tweet",
 ];
-const EXPANSIONS = ["author_id", "attachments.media_keys"];
-const MEDIA_FIELDS = ["url", "preview_image_url", "type", "width", "height"];
-const USER_FIELDS = ["name", "username", "profile_image_url"];
+const EXPANSIONS = [
+  "author_id",
+  "attachments.media_keys",
+  "referenced_tweets.id",
+  "referenced_tweets.id.author_id",
+  "referenced_tweets.id.attachments.media_keys",
+];
+const MEDIA_FIELDS = [
+  "url",
+  "preview_image_url",
+  "type",
+  "width",
+  "height",
+  "duration_ms",
+  "alt_text",
+  "variants",
+];
+const USER_FIELDS = [
+  "name",
+  "username",
+  "profile_image_url",
+  "description",
+  "verified",
+  "verified_type",
+];
+const OAUTH_SCOPES = [
+  "tweet.read",
+  "users.read",
+  "follows.read",
+  "follows.write",
+  "offline.access",
+];
+const PROFILE_USER_FIELDS = [
+  "name",
+  "username",
+  "description",
+  "profile_image_url",
+  "verified",
+  "verified_type",
+  "protected",
+  "connection_status",
+];
 
 function secretsFromEnv() {
   return {
@@ -193,52 +245,150 @@ function isRetweetV2(tweet) {
   return (tweet.referenced_tweets || []).some((r) => r.type === "retweeted");
 }
 
-function mediaUrlsV2(tweet, includes) {
-  const keys = tweet.attachments?.media_keys || [];
-  if (!keys.length || !includes?.media) return [];
+function tweetTextV2(tweet) {
+  // Long-form posts: prefer note_tweet over truncated text.
+  return tweet?.note_tweet?.text || tweet?.text || "";
+}
+
+function bestMp4Url(variants) {
+  if (!Array.isArray(variants)) return null;
+  const mp4s = variants.filter(
+    (v) => v && v.url && v.content_type === "video/mp4"
+  );
+  if (!mp4s.length) return null;
+  mp4s.sort((a, b) => (Number(b.bit_rate) || 0) - (Number(a.bit_rate) || 0));
+  return mp4s[0].url;
+}
+
+function mapMediaItemV2(m) {
+  const type = m.type || "photo";
+  const previewUrl = m.preview_image_url || m.url || null;
+  const videoUrl =
+    type === "video" || type === "animated_gif" ? bestMp4Url(m.variants) : null;
+  return {
+    type,
+    url: type === "photo" ? m.url || previewUrl : previewUrl,
+    previewUrl,
+    videoUrl,
+    width: m.width || null,
+    height: m.height || null,
+    alt: m.alt_text || null,
+  };
+}
+
+function mediaFromV2(tweet, includes) {
+  const keys = tweet?.attachments?.media_keys || [];
+  const list = includes?.media;
+  if (!keys.length || !Array.isArray(list)) return [];
   return keys
-    .map((key) => includes.media.find((m) => m.media_key === key))
+    .map((key) => list.find((m) => m.media_key === key))
     .filter(Boolean)
-    .map((m) => m.url || m.preview_image_url)
-    .filter(Boolean);
+    .map(mapMediaItemV2);
+}
+
+function mediaUrlsFromItems(items) {
+  return items.map((m) => m.previewUrl || m.url).filter(Boolean);
+}
+
+function looksLikeVideoThumb(url) {
+  return (
+    typeof url === "string" &&
+    /\/(amplify_video_thumb|ext_tw_video_thumb|tweet_video_thumb)\//.test(url)
+  );
+}
+
+function hasPlayableVideo(data) {
+  return (
+    Array.isArray(data?.media) && data.media.some((m) => m && m.videoUrl)
+  );
+}
+
+function mightHaveVideo(data) {
+  if (data?.mediaCheckedAt) return false;
+  if (hasPlayableVideo(data)) return false;
+  if (Array.isArray(data?.media)) {
+    return data.media.some(
+      (m) => m && (m.type === "video" || m.type === "animated_gif")
+    );
+  }
+  return (data?.mediaUrls || []).some(looksLikeVideoThumb);
+}
+
+function resolveRetweetSourceV2(tweet, includes) {
+  const ref = (tweet.referenced_tweets || []).find((r) => r.type === "retweeted");
+  if (!ref?.id || !includes?.tweets?.length) return null;
+  return includes.tweets.find((t) => t.id === ref.id) || null;
 }
 
 function mapTweetV2(tweet, includes) {
+  const retweet = isRetweetV2(tweet);
+  const source = retweet ? resolveRetweetSourceV2(tweet, includes) : null;
+  const contentTweet = source || tweet;
+  const authorId = contentTweet.author_id || tweet.author_id;
   const author =
-    includes?.users?.find((u) => u.id === tweet.author_id) || null;
+    includes?.users?.find((u) => u.id === authorId) || null;
+  const reposter =
+    retweet
+      ? includes?.users?.find((u) => u.id === tweet.author_id) || null
+      : null;
+  const handle = author?.username || "unknown";
+  const statusId = contentTweet.id || tweet.id;
+  const media = mediaFromV2(contentTweet, includes);
+
   return {
-    text: tweet.text || "",
-    authorId: tweet.author_id || null,
+    text: tweetTextV2(contentTweet),
+    authorId: authorId || null,
     authorName: author?.name || "Unknown",
-    authorHandle: author?.username || "unknown",
+    authorHandle: handle,
     authorAvatar: author?.profile_image_url
       ? author.profile_image_url.replace("_normal", "_bigger")
       : null,
     createdAt: tweet.created_at
       ? Timestamp.fromDate(new Date(tweet.created_at))
       : FieldValue.serverTimestamp(),
-    mediaUrls: mediaUrlsV2(tweet, includes),
-    url: author?.username
-      ? `https://x.com/${author.username}/status/${tweet.id}`
-      : `https://x.com/i/status/${tweet.id}`,
-    isRetweet: isRetweetV2(tweet),
+    mediaUrls: mediaUrlsFromItems(media),
+    media,
+    url: handle
+      ? `https://x.com/${handle}/status/${statusId}`
+      : `https://x.com/i/status/${statusId}`,
+    isRetweet: retweet,
+    repostedByHandle: reposter?.username || null,
+    repostedByName: reposter?.name || null,
     fetchedAt: FieldValue.serverTimestamp(),
   };
 }
 
-function mediaUrlsV1(tweet) {
+function mediaFromV1(tweet) {
   const media =
     tweet.extended_entities?.media || tweet.entities?.media || [];
-  return media
-    .map((m) => m.media_url_https || m.media_url)
-    .filter(Boolean);
+  return media.map((m) => {
+    const type = m.type || "photo";
+    const previewUrl = m.media_url_https || m.media_url || null;
+    const videoUrl =
+      type === "video" || type === "animated_gif"
+        ? bestMp4Url(m.video_info?.variants)
+        : null;
+    return {
+      type,
+      url: previewUrl,
+      previewUrl,
+      videoUrl,
+      width: m.sizes?.large?.w || m.sizes?.medium?.w || null,
+      height: m.sizes?.large?.h || m.sizes?.medium?.h || null,
+      alt: m.ext_alt_text || null,
+    };
+  });
 }
 
 function mapTweetV1(tweet) {
-  const user = tweet.user || {};
+  const source = tweet.retweeted_status || null;
+  const content = source || tweet;
+  const user = content.user || tweet.user || {};
   const handle = user.screen_name || "unknown";
+  const reposter = source ? tweet.user : null;
+  const media = mediaFromV1(content);
   return {
-    text: tweet.full_text || tweet.text || "",
+    text: content.full_text || content.text || "",
     authorId: user.id_str || null,
     authorName: user.name || "Unknown",
     authorHandle: handle,
@@ -248,9 +398,12 @@ function mapTweetV1(tweet) {
     createdAt: tweet.created_at
       ? Timestamp.fromDate(new Date(tweet.created_at))
       : FieldValue.serverTimestamp(),
-    mediaUrls: mediaUrlsV1(tweet),
-    url: `https://x.com/${handle}/status/${tweet.id_str}`,
-    isRetweet: Boolean(tweet.retweeted_status),
+    mediaUrls: mediaUrlsFromItems(media),
+    media,
+    url: `https://x.com/${handle}/status/${content.id_str || tweet.id_str}`,
+    isRetweet: Boolean(source),
+    repostedByHandle: reposter?.screen_name || null,
+    repostedByName: reposter?.name || null,
     fetchedAt: FieldValue.serverTimestamp(),
   };
 }
@@ -289,6 +442,11 @@ async function syncViaV2(client, userDoc, sinceId) {
           name: user.name,
           username: user.username,
           profileImageUrl: user.profile_image_url || null,
+          description: user.description || "",
+          verified: Boolean(
+            user.verified ||
+              (user.verified_type && user.verified_type !== "none")
+          ),
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true }
@@ -361,6 +519,53 @@ async function syncViaV1(client, userDoc, sinceId) {
   return { fetched, written, newestId, api: "v1" };
 }
 
+async function backfillVideoMedia(client, userDoc) {
+  const snap = await userDoc.ref
+    .collection("posts")
+    .orderBy("createdAt", "desc")
+    .limit(100)
+    .get();
+
+  const needIds = [];
+  for (const docSnap of snap.docs) {
+    if (mightHaveVideo(docSnap.data())) needIds.push(docSnap.id);
+  }
+  if (!needIds.length) return 0;
+
+  const res = await client.v2.tweets(needIds, {
+    "tweet.fields": TWEET_FIELDS,
+    expansions: EXPANSIONS,
+    "media.fields": MEDIA_FIELDS,
+    "user.fields": USER_FIELDS,
+  });
+  const tweets = Array.isArray(res.data) ? res.data : res.data ? [res.data] : [];
+  const includes = res.includes || {};
+  const found = new Set(tweets.map((t) => t.id));
+  const postsCol = userDoc.ref.collection("posts");
+  const checkedAt = FieldValue.serverTimestamp();
+  let updated = 0;
+
+  for (const tweet of tweets) {
+    const mapped = mapTweetV2(tweet, includes);
+    await postsCol.doc(tweet.id).set(
+      {
+        media: mapped.media,
+        mediaUrls: mapped.mediaUrls,
+        mediaCheckedAt: checkedAt,
+      },
+      { merge: true }
+    );
+    updated += 1;
+  }
+
+  for (const id of needIds) {
+    if (found.has(id)) continue;
+    await postsCol.doc(id).set({ mediaCheckedAt: checkedAt }, { merge: true });
+  }
+
+  return updated;
+}
+
 async function syncUser(userDoc, secrets) {
   const uid = userDoc.id;
   const syncRef = userDoc.ref.collection("sync").doc("state");
@@ -382,6 +587,13 @@ async function syncUser(userDoc, secrets) {
     result = await syncViaV1(client, userDoc, sinceId);
   }
 
+  let videosBackfilled = 0;
+  try {
+    videosBackfilled = await backfillVideoMedia(client, userDoc);
+  } catch (err) {
+    logger.warn("video media backfill failed", { uid, error: err.message });
+  }
+
   await syncRef.set(
     {
       sinceId: result.newestId || sinceId || null,
@@ -389,6 +601,7 @@ async function syncUser(userDoc, secrets) {
       lastFetched: result.fetched,
       lastWritten: result.written,
       lastApi: result.api,
+      lastVideosBackfilled: videosBackfilled,
       lastError: null,
     },
     { merge: true }
@@ -403,7 +616,7 @@ async function syncUser(userDoc, secrets) {
     { merge: true }
   );
 
-  return result;
+  return { ...result, videosBackfilled };
 }
 
 async function fetchAndStoreUsage(secrets) {
@@ -594,7 +807,7 @@ exports.startXAuth = onRequest(oauthSecretOpts, async (req, res) => {
     const { url, codeVerifier, state } = client.generateOAuth2AuthLink(
       OAUTH_CALLBACK_URL,
       {
-        scope: ["tweet.read", "users.read", "offline.access"],
+        scope: OAUTH_SCOPES,
       }
     );
 
@@ -618,7 +831,17 @@ exports.startXAuth = onRequest(oauthSecretOpts, async (req, res) => {
 });
 
 exports.xOAuthCallback = onRequest(
-  { ...oauthSecretOpts, secrets: [xClientId, xClientSecret, xApiKey, xApiSecret, xBearerToken] },
+  {
+    ...oauthSecretOpts,
+    secrets: [
+      xClientId,
+      xClientSecret,
+      xApiKey,
+      xApiSecret,
+      xBearerToken,
+      firebaseAdminCreds,
+    ],
+  },
   async (req, res) => {
     const fail = (msg) => {
       const u = new URL(SITE_URL);
@@ -725,7 +948,7 @@ exports.xOAuthCallback = onRequest(
           logger.warn("post-oauth sync failed", { xUserId, error: err.message })
         );
 
-      const customToken = await auth.createCustomToken(xUserId, {
+      const customToken = await getSigningAuth().createCustomToken(xUserId, {
         handle: normalizeHandle(handle),
       });
       const u = new URL(SITE_URL);
@@ -782,6 +1005,136 @@ exports.createInvite = onCall(
     };
   }
 );
+
+function mapAuthorCard(user, viewerId) {
+  const connections = Array.isArray(user.connection_status)
+    ? user.connection_status
+    : [];
+  const avatar = user.profile_image_url
+    ? String(user.profile_image_url).replace("_normal", "_bigger")
+    : null;
+  return {
+    id: user.id,
+    name: user.name || user.username,
+    handle: user.username,
+    avatar,
+    description: user.description || "",
+    verified: Boolean(
+      user.verified || (user.verified_type && user.verified_type !== "none")
+    ),
+    protected: Boolean(user.protected),
+    following: connections.includes("following"),
+    isSelf: String(user.id) === String(viewerId),
+  };
+}
+
+function throwXError(err) {
+  const detail =
+    err?.data?.detail || err?.data?.title || err?.message || "X API error";
+  const code = Number(err?.code) || 0;
+  logger.warn("X API error", { code, detail, data: err?.data });
+  if (
+    code === 401 ||
+    code === 403 ||
+    /scope|unauthorized|forbidden|not permitted/i.test(String(detail))
+  ) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Sign out and sign in again to follow people from MyTwitter."
+    );
+  }
+  throw new HttpsError("internal", String(detail));
+}
+
+async function callerClient(uid) {
+  const memberSnap = await db.collection("members").doc(uid).get();
+  if (!memberSnap.exists || memberSnap.data()?.enabled === false) {
+    throw new HttpsError("permission-denied", "Not a member");
+  }
+  const userDoc = await db.collection("users").doc(uid).get();
+  if (!userDoc.exists) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Sign out and sign in again to reconnect X."
+    );
+  }
+  try {
+    return await getUserClient(userDoc, secretsFromEnv());
+  } catch (err) {
+    logger.warn("callerClient failed", { uid, error: err.message });
+    throw new HttpsError(
+      "failed-precondition",
+      "Sign out and sign in again to reconnect X."
+    );
+  }
+}
+
+async function lookupAuthor(client, { userId, handle }) {
+  const opts = { "user.fields": PROFILE_USER_FIELDS };
+  try {
+    if (userId) {
+      const res = await client.v2.user(String(userId), opts);
+      return res?.data || null;
+    }
+    const username = normalizeHandle(handle);
+    if (!username) return null;
+    const res = await client.v2.userByUsername(username, opts);
+    return res?.data || null;
+  } catch (err) {
+    throwXError(err);
+  }
+  return null;
+}
+
+const followFnOpts = {
+  region: "us-central1",
+  secrets: [xClientId, xClientSecret, xApiKey, xApiSecret],
+  timeoutSeconds: 30,
+  memory: "256MiB",
+};
+
+exports.getAuthorCard = onCall(followFnOpts, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+  const userId = String(request.data?.userId || "").trim();
+  const handle = String(request.data?.handle || "").trim();
+  if (!userId && !handle) {
+    throw new HttpsError("invalid-argument", "userId or handle required");
+  }
+
+  const { client, xUserId } = await callerClient(request.auth.uid);
+  const user = await lookupAuthor(client, { userId, handle });
+  if (!user) {
+    throw new HttpsError("not-found", "Account not found");
+  }
+  return mapAuthorCard(user, xUserId);
+});
+
+exports.setFollowing = onCall(followFnOpts, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+  const targetId = String(request.data?.userId || "").trim();
+  const follow = request.data?.follow !== false;
+  if (!targetId) {
+    throw new HttpsError("invalid-argument", "userId required");
+  }
+
+  const { client, xUserId } = await callerClient(request.auth.uid);
+  if (String(targetId) === String(xUserId)) {
+    throw new HttpsError("invalid-argument", "You already follow yourself.");
+  }
+
+  try {
+    if (follow) await client.v2.follow(xUserId, targetId);
+    else await client.v2.unfollow(xUserId, targetId);
+  } catch (err) {
+    throwXError(err);
+  }
+
+  return { userId: targetId, following: follow };
+});
 
 exports.syncTimeline = onSchedule(
   {

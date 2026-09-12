@@ -46,32 +46,129 @@ body {
 }
 
 .site-header {
-  padding: 2rem 0 1rem;
+  padding: 1.5rem 0 1rem;
   border-bottom: 1px solid var(--border);
   margin-bottom: 1.25rem;
 }
 
+.header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
 .site-header h1 {
-  margin: 0 0 0.35rem;
+  margin: 0;
   font-size: 1.6rem;
   letter-spacing: -0.02em;
 }
 
-.subtitle,
-.status,
-.usage,
-.site-footer {
+.refreshed {
+  margin: 0.45rem 0 0;
   color: var(--muted);
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+  min-height: 1.2em;
+}
+
+.info-btn {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-style: italic;
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.info-btn:hover,
+.info-btn:focus-visible {
+  color: var(--text);
+  border-color: var(--accent);
+  outline: none;
+}
+
+.info-dialog {
+  width: min(100% - 2rem, 22rem);
+  margin: auto;
+  padding: 1.15rem 1.2rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.info-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.info-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.info-dialog-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.info-close {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.1rem 0.35rem;
+}
+
+.info-close:hover,
+.info-close:focus-visible {
+  color: var(--text);
+  outline: none;
+}
+
+.info-line {
+  margin: 0 0 0.65rem;
+  color: var(--text);
   font-size: 0.95rem;
 }
 
-.status {
-  margin: 0.75rem 0 0;
+.info-line:last-child {
+  margin-bottom: 0;
 }
 
-.usage {
-  margin: 0.35rem 0 0;
+.info-line.muted,
+.info-line.status,
+.info-line.usage {
+  color: var(--muted);
+}
+
+.info-line.usage {
   font-variant-numeric: tabular-nums;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .feed {
@@ -185,9 +282,4 @@ body {
 
 .hidden {
   display: none !important;
-}
-
-.site-footer {
-  padding: 1rem 0 2.5rem;
-  border-top: 1px solid var(--border);
 }

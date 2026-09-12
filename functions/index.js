@@ -433,6 +433,15 @@ async function runSyncAll(secrets) {
   }
 
   const usage = await fetchAndStoreUsage(secrets);
+  const anyOk = results.some((r) => r.ok);
+  if (anyOk) {
+    await db.collection("config").doc("public").set(
+      {
+        lastRefreshedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }
   return { users: usersSnap.size, results, usage };
 }
 

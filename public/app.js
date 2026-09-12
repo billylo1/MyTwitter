@@ -25,6 +25,7 @@ const db = getFirestore(app);
 const feedEl = document.getElementById("feed");
 const emptyEl = document.getElementById("empty");
 const statusEl = document.getElementById("status");
+const refreshedEl = document.getElementById("refreshed");
 const usageEl = document.getElementById("usage");
 
 function formatUsd(amount) {
@@ -35,6 +36,25 @@ function formatUsd(amount) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 3,
   }).format(amount);
+}
+
+function formatAbsolute(date) {
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function renderRefreshed(ts) {
+  if (!refreshedEl) return;
+  const date = ts?.toDate?.() || (ts instanceof Date ? ts : null);
+  if (!date) {
+    refreshedEl.textContent = "";
+    return;
+  }
+  refreshedEl.textContent = `Last refreshed ${formatRelative(date)} · ${formatAbsolute(date)}`;
 }
 
 function renderUsage(usage) {
@@ -66,18 +86,21 @@ function renderUsage(usage) {
   usageEl.textContent = text;
 }
 
-function subscribeUsage() {
+function subscribePublicConfig() {
   return onSnapshot(
     doc(db, "config", "public"),
     (snap) => {
       if (!snap.exists()) {
         renderUsage(null);
+        renderRefreshed(null);
         return;
       }
-      renderUsage(snap.data().usage || null);
+      const data = snap.data();
+      renderUsage(data.usage || null);
+      renderRefreshed(data.lastRefreshedAt || null);
     },
     (err) => {
-      console.warn("usage listener failed", err);
+      console.warn("config/public listener failed", err);
     }
   );
 }
@@ -154,6 +177,12 @@ function renderPost(id, data) {
   </article>`;
 }
 
+function createPostElement(id, data) {
+  const wrap = document.createElement("div");
+  wrap.innerHTML = renderPost(id, data).trim();
+  return wrap.firstElementChild;
+}
+
 function subscribeFeed(uid) {
   const q = query(
     collection(db, "users", uid, "posts"),
@@ -161,28 +190,71 @@ function subscribeFeed(uid) {
     limit(100)
   );
 
-  return onSnapshot(
-    q,
-    (snap) => {
-      feedEl.setAttribute("aria-busy", "false");
-      if (snap.empty) {
-        feedEl.innerHTML = "";
-        emptyEl.classList.remove("hidden");
-        statusEl.textContent = "Waiting for the first sync…";
-        return;
-      }
+  /** @type {Map<string, HTMLElement>} */
+  const cards = new Map();
+
+  function syncEmptyState(isEmpty) {
+    if (isEmpty) {
+      emptyEl.classList.remove("hidden");
+      statusEl.textContent = "Waiting for the first sync…";
+    } else {
       emptyEl.classList.add("hidden");
-      feedEl.innerHTML = snap.docs
-        .map((d) => renderPost(d.id, d.data()))
-        .join("");
-      statusEl.textContent = `${snap.size} recent posts · live`;
-    },
-    (err) => {
-      console.error(err);
-      statusEl.textContent = `Could not load feed: ${err.message}`;
-      feedEl.setAttribute("aria-busy", "false");
     }
-  );
+  }
+
+  function applyFeedSnapshot(snap) {
+    feedEl.setAttribute("aria-busy", "false");
+
+    if (snap.empty) {
+      for (const el of cards.values()) el.remove();
+      cards.clear();
+      syncEmptyState(true);
+      return;
+    }
+
+    syncEmptyState(false);
+
+    for (const change of snap.docChanges()) {
+      const id = change.doc.id;
+
+      if (change.type === "removed") {
+        cards.get(id)?.remove();
+        cards.delete(id);
+        continue;
+      }
+
+      const data = change.doc.data();
+      const next = createPostElement(id, data);
+      const prev = cards.get(id);
+
+      if (prev) {
+        // Rebuild only this card; siblings stay mounted (no full-feed flicker).
+        prev.replaceWith(next);
+      }
+      cards.set(id, next);
+    }
+
+    // Ensure DOM order matches query order without remounting unchanged nodes.
+    let previous = null;
+    for (const d of snap.docs) {
+      const el = cards.get(d.id);
+      if (!el) continue;
+      if (previous) {
+        if (previous.nextElementSibling !== el) previous.after(el);
+      } else if (feedEl.firstElementChild !== el) {
+        feedEl.prepend(el);
+      }
+      previous = el;
+    }
+
+    statusEl.textContent = `${snap.size} recent posts · live`;
+  }
+
+  return onSnapshot(q, applyFeedSnapshot, (err) => {
+    console.error(err);
+    statusEl.textContent = `Could not load feed: ${err.message}`;
+    feedEl.setAttribute("aria-busy", "false");
+  });
 }
 
 async function resolveUid() {
@@ -204,7 +276,18 @@ async function resolveUid() {
 }
 
 async function boot() {
-  subscribeUsage();
+  const dialog = document.getElementById("info-dialog");
+  const openBtn = document.getElementById("info-open");
+  const closeBtn = document.getElementById("info-close");
+  if (dialog && openBtn && closeBtn) {
+    openBtn.addEventListener("click", () => dialog.showModal());
+    closeBtn.addEventListener("click", () => dialog.close());
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) dialog.close();
+    });
+  }
+
+  subscribePublicConfig();
   const uid = await resolveUid();
   if (!uid) {
     statusEl.textContent =

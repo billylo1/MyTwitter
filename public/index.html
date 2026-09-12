@@ -13,14 +13,38 @@
   <body>
     <header class="site-header">
       <div class="inner">
-        <h1>Following feed</h1>
-        <p class="subtitle">
-          Original posts from accounts I follow. Newest first. No replies.
-        </p>
-        <p id="status" class="status" aria-live="polite">Loading…</p>
-        <p id="usage" class="usage" aria-live="polite"></p>
+        <div class="header-bar">
+          <h1>Following feed</h1>
+          <button
+            type="button"
+            id="info-open"
+            class="info-btn"
+            aria-haspopup="dialog"
+            aria-controls="info-dialog"
+            title="Feed info"
+          >
+            <span aria-hidden="true">i</span>
+            <span class="sr-only">Feed info</span>
+          </button>
+        </div>
+        <p id="refreshed" class="refreshed" aria-live="polite"></p>
       </div>
     </header>
+
+    <dialog id="info-dialog" class="info-dialog" aria-labelledby="info-title">
+      <div class="info-dialog-header">
+        <h2 id="info-title">About this feed</h2>
+        <button type="button" id="info-close" class="info-close" aria-label="Close">
+          ×
+        </button>
+      </div>
+      <p class="info-line">
+        Original posts from accounts I follow. Newest first. No replies.
+      </p>
+      <p id="status" class="info-line status" aria-live="polite">Loading…</p>
+      <p id="usage" class="info-line usage" aria-live="polite"></p>
+      <p class="info-line muted">Updated from X about every 10 minutes.</p>
+    </dialog>
 
     <main class="inner">
       <div id="feed" class="feed" role="feed" aria-busy="true"></div>
@@ -28,10 +52,6 @@
         No posts yet. Connect X and run a sync to populate this feed.
       </p>
     </main>
-
-    <footer class="site-footer inner">
-      <p>Updated from X about every 10 minutes.</p>
-    </footer>
 
     <script type="module" src="/app.js"></script>
   </body>

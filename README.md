@@ -15,8 +15,8 @@ I spent some time on this web app (self-hosted) so you can make your own X clien
 
 - Own chronological following feed (no algorithmic ranking)
 - Like / unlike and share from each card
-- Author hover card with Follow / Unfollow (defaults to Following until the API responds)
-- Link preview cards from X URL metadata (when the post has no attached media)
+- Author hover card with Follow / Unfollow
+- Link preview cards from X URL metadata
 - Inline video / GIF
 
 <img width="612" height="1233" alt="image" src="https://github.com/user-attachments/assets/a1d1b255-6dc5-4cbd-8012-8e217ce2b9c1" />
@@ -25,7 +25,6 @@ I spent some time on this web app (self-hosted) so you can make your own X clien
 
 - Firebase Hosting + Firestore + Cloud Functions (Gen 2) + Auth (custom tokens)
 - X API OAuth 2.0 (`tweet.read`, `users.read`, `follows.read`, `follows.write`, `like.read`, `like.write`, `offline.access`)
-- Membership via handle allowlist and/or invite links (`invitesEnabled` feature flag, **default off**)
 
 ## Prerequisites
 
@@ -222,4 +221,4 @@ docs/ARCHITECTURE.md
 
 ## License
 
-[MIT](LICENSE). Each member sees only their own following feed. Design for an allowlisted (and optionally invite-gated) group, not a public social network.
+[MIT](LICENSE). Each member sees only their own following feed. Design for personal use using allowlisted (and optionally invite-gated) group, not a public network.

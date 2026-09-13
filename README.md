@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Self-hosted Firebase app: each invited member signs in with **X**, then sees original posts from accounts they follow (newest first, no replies; full text for reposts). Polls home timelines every 10 minutes.
+Self-hosted Firebase app: each allowlisted (or invited) member signs in with **X**, then sees **only their own** following timeline — original posts and reposts, newest first, no replies; full text for reposts; media and link previews when X provides them. Polls home timelines every 10 minutes.
 
 **Architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md) · **Security:** [SECURITY.md](SECURITY.md)
 
@@ -14,11 +14,20 @@ X is useful. But its feed algorithm is not designed to serve us. It is primarily
 
 I spent some time on this repo so you can host your own client and get the benefits of X without being steered by that algorithm. Setup is not complex, and hosting does not cost much (Firebase free tier should be enough for a small group). X API usage is about `$0.005` per post retrieved. For me, that is a reasonable tradeoff for a non-biased feed and an ad-free experience. I hope this helps.
 
+## Features
+
+- Own chronological following feed (no algorithmic ranking, no ads)
+- Like / unlike and share from each card
+- Author hover card with Follow / Unfollow (defaults to Following until the API responds)
+- Link preview cards from X URL metadata (when the post has no attached media)
+- Inline video / GIF
+- Membership via handle allowlist; optional invite links (`invitesEnabled`, **default off**)
+
 ## Stack
 
 - Firebase Hosting + Firestore + Cloud Functions (Gen 2) + Auth (custom tokens)
 - X API OAuth 2.0 (`tweet.read`, `users.read`, `follows.read`, `follows.write`, `like.read`, `like.write`, `offline.access`)
-- Membership via handle allowlist and/or invite links
+- Membership via handle allowlist and/or invite links (`invitesEnabled` feature flag, **default off**)
 
 ## Prerequisites
 
@@ -132,9 +141,9 @@ npm run deploy
 1. Open `https://YOUR_PROJECT_ID.web.app`
 2. **Sign in with X** (allowlisted handles join without an invite)
 3. Wait for the scheduled sync, or trigger manually (below)
-4. Admins: open the **i** dialog → **Create invite link** for others
+4. Optional invites: in Firestore set `config/public.invitesEnabled` to `true`, then admins can open the **i** dialog → **Create invite link**
 
-Invite URL shape: `https://YOUR_PROJECT_ID.web.app/?invite=CODE`
+Invite URL shape (only when invites are enabled): `https://YOUR_PROJECT_ID.web.app/?invite=CODE`
 
 ### 8. Manual sync (optional)
 
@@ -164,20 +173,22 @@ See `firebase.json` for emulator ports. Hosting serves `public/` (including your
 | Deploy functions only | `npx firebase-tools@latest deploy --only functions` |
 | Refresh secrets | `./scripts/set-secrets.sh` then redeploy functions |
 | Add handles without invite | Edit `config/allowlist.handles` in Firestore (or re-run bootstrap with `EXTRA_HANDLES`) |
+| Enable friend/family invites | Set `config/public.invitesEnabled` = `true` in Firestore (default off) |
 | Local CLI OAuth (emergency) | `npm run oauth` — still uses localhost callback; prefer web sign-in for members |
 
 ## Project layout
 
 ```
-public/                    # Hosting SPA
+public/                         # Hosting SPA (app.js, styles, index.html)
 public/firebase-config.example.js
-functions/                 # Cloud Functions (OAuth, sync, invites)
-scripts/                   # bootstrap, secrets, local oauth helpers
+functions/                      # Cloud Functions (OAuth, sync, likes, follows, invites)
+scripts/                        # bootstrap, secrets, oauth helpers, resolve-project
 firebase.json
 .firebaserc.example
-firestore.rules            # Member-gated reads
+firestore.rules                 # Own-feed + member-gated reads
 firestore.indexes.json
 .env.example
+LICENSE / CONTRIBUTING.md / SECURITY.md / CODE_OF_CONDUCT.md
 docs/ARCHITECTURE.md
 ```
 
@@ -188,8 +199,9 @@ docs/ARCHITECTURE.md
 | X: “You weren’t able to give access to the App” | Callback URI / Website URL not registered or mismatched |
 | Site: “X sign-in failed” | Check `xOAuthCallback` logs; custom-token signing needs `ADMIN_SDK_CREDENTIALS`; confirm `SITE_URL` |
 | Missing Firebase web config | Copy `firebase-config.example.js` → `firebase-config.js` |
-| “not invited” | Handle not on allowlist and no valid invite |
+| “not invited” | Handle not on allowlist; or invite missing/invalid; or `invitesEnabled` is false |
 | Feed empty after login | Wait for sync / run `syncNow`; confirm `users/{uid}.enabled` |
+| No link preview on old posts | Previews are written on sync; re-sync after deploying link-preview support |
 | Truncated `RT @…` text on old cards | Fixed in sync via referenced-tweet expansion; re-sync overwrites recent posts |
 
 ## Security notes
@@ -209,4 +221,4 @@ docs/ARCHITECTURE.md
 
 ## License
 
-[MIT](LICENSE). Each member’s following timeline is visible to other signed-in members of **your** deployment — design for an invite-only group, not a public social network.
+[MIT](LICENSE). Each member sees only their own following feed. Design for an allowlisted (and optionally invite-gated) group, not a public social network.

@@ -152,6 +152,12 @@ async function getAllowlist() {
   };
 }
 
+/** Friend/family invite links. Default off when unset. */
+async function isInvitesEnabled() {
+  const snap = await db.collection("config").doc("public").get();
+  return snap.exists === true && snap.data()?.invitesEnabled === true;
+}
+
 async function isExistingMember(xUserId) {
   const snap = await db.collection("members").doc(xUserId).get();
   return snap.exists && snap.data()?.enabled !== false;
@@ -304,6 +310,63 @@ function mediaUrlsFromItems(items) {
   return items.map((m) => m.previewUrl || m.url).filter(Boolean);
 }
 
+function isXHost(hostname) {
+  const h = String(hostname || "").toLowerCase();
+  return (
+    h === "x.com" ||
+    h === "twitter.com" ||
+    h.endsWith(".x.com") ||
+    h.endsWith(".twitter.com") ||
+    h === "t.co"
+  );
+}
+
+function bestUrlImage(images) {
+  if (!Array.isArray(images) || !images.length) return null;
+  const ranked = [...images].sort(
+    (a, b) =>
+      (Number(b.width) || 0) * (Number(b.height) || 0) -
+      (Number(a.width) || 0) * (Number(a.height) || 0)
+  );
+  return ranked[0]?.url || null;
+}
+
+/** Open Graph–style card from entities.urls (when X returns title/description/images). */
+function linkPreviewFromEntities(tweet) {
+  const urls = [
+    ...(tweet?.note_tweet?.entities?.urls || []),
+    ...(tweet?.entities?.urls || []),
+  ];
+  if (!urls.length) return null;
+
+  for (const u of urls) {
+    const href = u.unwound_url || u.expanded_url || u.url || "";
+    if (!href) continue;
+    let hostname = "";
+    try {
+      hostname = new URL(href).hostname.replace(/^www\./, "");
+    } catch {
+      continue;
+    }
+    if (isXHost(hostname)) continue;
+
+    const title = u.title || null;
+    const description = u.description || null;
+    const imageUrl = bestUrlImage(u.images);
+    if (!title && !description && !imageUrl) continue;
+
+    return {
+      url: href,
+      displayUrl: u.display_url || hostname,
+      domain: hostname,
+      title,
+      description,
+      imageUrl,
+    };
+  }
+  return null;
+}
+
 function looksLikeVideoThumb(url) {
   return (
     typeof url === "string" &&
@@ -354,6 +417,8 @@ function mapTweetV2(tweet, includes) {
   const handle = author?.username || "unknown";
   const statusId = contentTweet.id || tweet.id;
   const media = mediaFromV2(contentTweet, includes);
+  const linkPreview =
+    media.length > 0 ? null : linkPreviewFromEntities(contentTweet);
 
   return {
     text: tweetTextV2(contentTweet),
@@ -368,6 +433,7 @@ function mapTweetV2(tweet, includes) {
       : FieldValue.serverTimestamp(),
     mediaUrls: mediaUrlsFromItems(media),
     media,
+    linkPreview,
     url: handle
       ? `https://x.com/${handle}/status/${statusId}`
       : `https://x.com/i/status/${statusId}`,
@@ -419,6 +485,8 @@ function mapTweetV1(tweet) {
     String(user.id_str) === String(tweet.user?.id_str || "");
   const showAsRepost = Boolean(source) && !selfRepost;
   const media = mediaFromV1(content);
+  const linkPreview =
+    media.length > 0 ? null : linkPreviewFromEntities(content);
   return {
     text: content.full_text || content.text || "",
     authorId: user.id_str || null,
@@ -432,6 +500,7 @@ function mapTweetV1(tweet) {
       : FieldValue.serverTimestamp(),
     mediaUrls: mediaUrlsFromItems(media),
     media,
+    linkPreview,
     url: `https://x.com/${handle}/status/${content.id_str || tweet.id_str}`,
     isRetweet: showAsRepost,
     repostedById: showAsRepost ? reposter?.id_str || null : null,
@@ -945,7 +1014,12 @@ exports.xOAuthCallback = onRequest(
       const alreadyMember = await isExistingMember(xUserId);
       const allowlisted = await isAllowlisted(xUserId, handle);
       let invited = false;
-      if (!alreadyMember && !allowlisted && session.invite) {
+      if (
+        !alreadyMember &&
+        !allowlisted &&
+        session.invite &&
+        (await isInvitesEnabled())
+      ) {
         invited = await consumeInvite(session.invite, xUserId);
       }
 
@@ -1006,6 +1080,12 @@ exports.createInvite = onCall(
   async (request) => {
     if (!request.auth?.uid) {
       throw new HttpsError("unauthenticated", "Sign in required");
+    }
+    if (!(await isInvitesEnabled())) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Invites are disabled. Set config/public.invitesEnabled to true."
+      );
     }
     const memberSnap = await db
       .collection("members")

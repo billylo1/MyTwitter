@@ -2,7 +2,7 @@
   "name": "mytwitter",
   "private": true,
   "license": "MIT",
-  "description": "Invite-only following feeds from X, hosted on Firebase",
+  "description": "Private allowlisted following feeds from X, hosted on Firebase",
   "repository": {
     "type": "git",
     "url": "https://github.com/billylo1/MyTwitter.git"

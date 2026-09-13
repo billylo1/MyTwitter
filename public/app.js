@@ -54,6 +54,7 @@ const usageEl = document.getElementById("usage");
 let feedUnsub = null;
 let likesUnsub = null;
 let configUnsub = null;
+let invitesEnabled = false;
 let currentMember = null;
 /** @type {Set<string>} */
 let likedIds = new Set();
@@ -154,19 +155,31 @@ function renderUsage(usage) {
   usageEl.textContent = text;
 }
 
+function updateAdminPanel() {
+  const show =
+    Boolean(currentMember) &&
+    currentMember.role === "admin" &&
+    invitesEnabled;
+  adminPanelEl.classList.toggle("hidden", !show);
+}
+
 function subscribePublicConfig() {
   if (configUnsub) configUnsub();
   configUnsub = onSnapshot(
     doc(db, "config", "public"),
     (snap) => {
       if (!snap.exists()) {
+        invitesEnabled = false;
         renderUsage(null);
         renderRefreshed(null);
+        updateAdminPanel();
         return;
       }
       const data = snap.data();
+      invitesEnabled = data.invitesEnabled === true;
       renderUsage(data.usage || null);
       renderRefreshed(data.lastRefreshedAt || null);
+      updateAdminPanel();
     },
     (err) => {
       console.warn("config/public listener failed", err);
@@ -202,6 +215,30 @@ function renderMedia(data) {
   if (!items.length) return "";
   const multi = items.length > 1 ? " media-multi" : "";
   return `<div class="media${multi}" data-count="${items.length}">${items.map(renderMediaItem).join("")}</div>`;
+}
+
+function renderLinkPreview(preview) {
+  if (!preview?.url) return "";
+  const domain = preview.domain || preview.displayUrl || "";
+  const title = preview.title || domain || preview.url;
+  const desc = preview.description
+    ? `<p class="link-preview-desc">${escapeHtml(preview.description)}</p>`
+    : "";
+  const thumb = preview.imageUrl
+    ? `<img class="link-preview-img" src="${escapeHtml(preview.imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" />`
+    : `<div class="link-preview-placeholder" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="28" height="28">
+          <path fill="currentColor" d="M6 4h9l3 3v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm8 1v3h3M8 11h8v1.5H8V11zm0 3.5h8V16H8v-1.5zm0 3.5h5V19.5H8V18z"/>
+        </svg>
+      </div>`;
+  return `<a class="link-preview" href="${escapeHtml(preview.url)}" target="_blank" rel="noopener noreferrer">
+    <div class="link-preview-media">${thumb}</div>
+    <div class="link-preview-body">
+      ${domain ? `<p class="link-preview-domain">${escapeHtml(domain)}</p>` : ""}
+      <p class="link-preview-title">${escapeHtml(title)}</p>
+      ${desc}
+    </div>
+  </a>`;
 }
 
 function renderPost(id, data) {
@@ -276,6 +313,7 @@ function renderPost(id, data) {
       </div>
     </div>
     <p class="text">${linkify(data.text || "")}</p>
+    ${renderLinkPreview(data.linkPreview)}
     ${renderMedia(data)}
   </article>`;
 }
@@ -358,11 +396,14 @@ function renderAuthorCard(data, { pending = false } = {}) {
   }
 
   const isSelf = Boolean(data.isSelf);
+  // Feed authors are usually already followed; default to following until API says otherwise.
+  const following =
+    typeof data.following === "boolean" ? data.following : true;
   authorCardFollow.classList.toggle("hidden", isSelf);
   authorCardFollow.disabled = pending || isSelf || !data.id;
-  authorCardFollow.classList.toggle("is-following", Boolean(data.following));
-  authorCardFollow.textContent = data.following ? "Following" : "Follow";
-  authorCardState = data;
+  authorCardFollow.classList.toggle("is-following", following);
+  authorCardFollow.textContent = following ? "Following" : "Follow";
+  authorCardState = { ...data, following };
 }
 
 async function loadAuthorCard(seed, trigger) {
@@ -727,6 +768,7 @@ async function consumeAuthParams() {
   }
 
   if (invite && !authError) {
+    // Server still rejects redemption when invitesEnabled is false.
     authMessageEl.textContent =
       "You have an invite. Sign in with X to join this private feed.";
   }
@@ -747,7 +789,7 @@ async function enterApp(user) {
 
   currentMember = { id: memberSnap.id, ...memberSnap.data() };
   whoamiEl.textContent = `@${currentMember.handle || user.uid}`;
-  adminPanelEl.classList.toggle("hidden", currentMember.role !== "admin");
+  updateAdminPanel();
 
   const params = new URLSearchParams(location.search);
   if (params.has("uid")) {
@@ -844,7 +886,7 @@ function wireUi() {
     // Card body opens X; skip controls / author / links / video.
     if (
       event.target.closest(
-        "a, button, video, .card-actions, .author-hover, .action-btn"
+        "a, button, video, .card-actions, .author-hover, .action-btn, .link-preview"
       )
     ) {
       return;
@@ -907,14 +949,14 @@ async function boot() {
         likesUnsub = null;
       }
       likedIds = new Set();
+      currentMember = null;
+      invitesEnabled = false;
       if (configUnsub) {
         configUnsub();
         configUnsub = null;
       }
       showAuthGate(
-        inviteFromUrl()
-          ? "You have an invite. Sign in with X to join this private feed."
-          : "Sign in with X to view your following feed. Friends and family only."
+        "Sign in with X to view your following feed. Friends and family only."
       );
       return;
     }

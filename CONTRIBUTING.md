@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for contributing. This app is invite-only following feeds from X on Firebase — keep PRs focused and avoid committing secrets.
+Thanks for contributing. This app is private following feeds from X on Firebase (allowlist + optional invites) — keep PRs focused and avoid committing secrets.
 
 ## Setup
 

@@ -8,6 +8,12 @@ Self-hosted Firebase app: each invited member signs in with **X**, then sees ori
 
 > Unofficial project. Not affiliated with, endorsed by, or sponsored by X Corp. or Twitter.
 
+## Why
+
+X is useful. But its feed algorithm is not designed to serve us. It is primarily optimized to keep our attention, prioritizing posts that trigger emotions (delight, rage, and the like). Thankfully, their APIs and terms of use allow building your own client so the feed can stay neutral — just time-ordered.
+
+I spent some time on this repo so you can host your own client and get the benefits of X without being steered by that algorithm. Setup is not complex, and hosting does not cost much (Firebase free tier should be enough for a small group). X API usage is about `$0.005` per post retrieved. For me, that is a reasonable tradeoff for a non-biased feed and an ad-free experience. I hope this helps.
+
 ## Stack
 
 - Firebase Hosting + Firestore + Cloud Functions (Gen 2) + Auth (custom tokens)

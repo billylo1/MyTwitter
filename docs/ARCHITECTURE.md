@@ -105,7 +105,7 @@ Hosting also sets `Referrer-Policy: no-referrer`. Firestore database location is
 | `invites/{code}` | Admin only | `createdBy`, `maxUses`, `usedCount`, `expiresAt`, `active`, `createdAt`, redemption metadata |
 | `oauthSessions/{state}` | Admin only | Short-lived PKCE + optional invite |
 
-**`linkPreview` shape** (omitted or `null` when the post has attached media): `{ url, displayUrl, domain, title, description, imageUrl }`.
+**`linkPreview` shape** (omitted or `null` when the post has attached media): `{ url, tcoUrl, expandedUrl, displayUrl, domain, title, description, imageUrl }`. Stored/display text omits the card URL when a preview is present.
 
 Rules: [`firestore.rules`](../firestore.rules) — no world-readable posts.
 

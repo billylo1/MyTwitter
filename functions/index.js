@@ -357,6 +357,8 @@ function linkPreviewFromEntities(tweet) {
 
     return {
       url: href,
+      tcoUrl: u.url || null,
+      expandedUrl: u.expanded_url || null,
       displayUrl: u.display_url || hostname,
       domain: hostname,
       title,
@@ -365,6 +367,31 @@ function linkPreviewFromEntities(tweet) {
     };
   }
   return null;
+}
+
+/** Drop the card URL from body text when a link preview is shown (matches X web). */
+function stripPreviewUrlsFromText(text, preview) {
+  if (!preview || !text) return text || "";
+  let out = String(text);
+  const candidates = [
+    preview.tcoUrl,
+    preview.expandedUrl,
+    preview.url,
+    preview.displayUrl,
+  ].filter(Boolean);
+  for (const raw of candidates) {
+    const escaped = String(raw).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    out = out.replace(new RegExp(escaped, "gi"), "");
+  }
+  // Older posts: preview without tcoUrl — remove leftover t.co short links.
+  if (!preview.tcoUrl) {
+    out = out.replace(/https?:\/\/t\.co\/[A-Za-z0-9]+/gi, "");
+  }
+  return out
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 function looksLikeVideoThumb(url) {
@@ -419,9 +446,13 @@ function mapTweetV2(tweet, includes) {
   const media = mediaFromV2(contentTweet, includes);
   const linkPreview =
     media.length > 0 ? null : linkPreviewFromEntities(contentTweet);
+  const rawText = tweetTextV2(contentTweet);
+  const text = linkPreview
+    ? stripPreviewUrlsFromText(rawText, linkPreview)
+    : rawText;
 
   return {
-    text: tweetTextV2(contentTweet),
+    text,
     authorId: authorId || null,
     authorName: author?.name || "Unknown",
     authorHandle: handle,
@@ -487,8 +518,12 @@ function mapTweetV1(tweet) {
   const media = mediaFromV1(content);
   const linkPreview =
     media.length > 0 ? null : linkPreviewFromEntities(content);
+  const rawText = content.full_text || content.text || "";
+  const text = linkPreview
+    ? stripPreviewUrlsFromText(rawText, linkPreview)
+    : rawText;
   return {
-    text: content.full_text || content.text || "",
+    text,
     authorId: user.id_str || null,
     authorName: user.name || "Unknown",
     authorHandle: handle,

@@ -114,6 +114,30 @@ function linkify(text) {
   );
 }
 
+/** Hide the card URL in body text when a link preview is already shown. */
+function stripPreviewUrlsFromText(text, preview) {
+  if (!preview || !text) return text || "";
+  let out = String(text);
+  const candidates = [
+    preview.tcoUrl,
+    preview.expandedUrl,
+    preview.url,
+    preview.displayUrl,
+  ].filter(Boolean);
+  for (const raw of candidates) {
+    const escaped = String(raw).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    out = out.replace(new RegExp(escaped, "gi"), "");
+  }
+  if (!preview.tcoUrl) {
+    out = out.replace(/https?:\/\/t\.co\/[A-Za-z0-9]+/gi, "");
+  }
+  return out
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 function renderRefreshed(ts) {
   if (!refreshedEl) return;
   const date = ts?.toDate?.() || (ts instanceof Date ? ts : null);
@@ -274,6 +298,12 @@ function renderPost(id, data) {
 
   const url = data.url || `https://x.com/i/status/${id}`;
   const liked = likedIds.has(id);
+  const bodyText = data.linkPreview
+    ? stripPreviewUrlsFromText(data.text || "", data.linkPreview)
+    : data.text || "";
+  const textBlock = bodyText
+    ? `<p class="text">${linkify(bodyText)}</p>`
+    : "";
   return `<article class="card" data-id="${escapeHtml(id)}" data-url="${escapeHtml(url)}">
     <a class="card-hit" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" aria-label="View on X"></a>
     <div class="card-actions">
@@ -312,7 +342,7 @@ function renderPost(id, data) {
         </div>
       </div>
     </div>
-    <p class="text">${linkify(data.text || "")}</p>
+    ${textBlock}
     ${renderLinkPreview(data.linkPreview)}
     ${renderMedia(data)}
   </article>`;

@@ -1,18 +1,19 @@
 #!/usr/bin/env node
 /**
- * Bootstrap friends-and-family access:
- *   - config/allowlist.handles (default: billylo)
+ * Bootstrap invite-only access:
+ *   - config/allowlist.handles (requires ADMIN_HANDLE)
  *   - members/{xUserId} admin for existing connected user
  *
  * Usage:
- *   node scripts/bootstrap-family.cjs
- *   ADMIN_HANDLE=billylo EXTRA_HANDLES=alice,bob node scripts/bootstrap-family.cjs
+ *   ADMIN_HANDLE=yourhandle node scripts/bootstrap-family.cjs
+ *   ADMIN_HANDLE=yourhandle EXTRA_HANDLES=alice,bob node scripts/bootstrap-family.cjs
  */
 
 const fs = require("fs");
 const path = require("path");
 const { initializeApp, cert, getApps } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { resolveFirebaseProjectId } = require("./resolve-project.cjs");
 
 const ROOT = path.resolve(__dirname, "..");
 
@@ -48,15 +49,22 @@ async function main() {
   const credPath =
     process.env.GOOGLE_APPLICATION_CREDENTIALS ||
     path.join(ROOT, "serviceAccount.json");
+  const projectId = resolveFirebaseProjectId(ROOT);
   if (!getApps().length) {
     initializeApp({
       credential: cert(JSON.parse(fs.readFileSync(credPath, "utf8"))),
-      projectId: "mytwitter-feed",
+      projectId,
     });
   }
   const db = getFirestore();
 
-  const adminHandle = normalizeHandle(process.env.ADMIN_HANDLE || "billylo");
+  const adminHandle = normalizeHandle(process.env.ADMIN_HANDLE || "");
+  if (!adminHandle) {
+    console.error(
+      "Set ADMIN_HANDLE to your X handle (e.g. ADMIN_HANDLE=yourhandle)."
+    );
+    process.exit(1);
+  }
   const extra = String(process.env.EXTRA_HANDLES || "")
     .split(",")
     .map(normalizeHandle)

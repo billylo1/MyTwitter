@@ -1,12 +1,17 @@
 {
   "name": "mytwitter",
   "private": true,
-  "description": "Private family following feeds from X, hosted on Firebase",
+  "license": "MIT",
+  "description": "Invite-only following feeds from X, hosted on Firebase",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/billylo1/MyTwitter.git"
+  },
   "scripts": {
     "oauth": "node scripts/x-oauth.cjs",
     "bootstrap": "node scripts/bootstrap-family.cjs",
-    "deploy": "npx -y firebase-tools@latest deploy --project mytwitter-feed",
-    "emulators": "npx -y firebase-tools@latest emulators:start --project mytwitter-feed"
+    "deploy": "npx -y firebase-tools@latest deploy",
+    "emulators": "npx -y firebase-tools@latest emulators:start"
   },
   "dependencies": {
     "firebase-admin": "^13.0.2",

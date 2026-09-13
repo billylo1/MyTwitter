@@ -20,14 +20,12 @@ import {
   httpsCallable,
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-functions.js";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyCNcleHS4D3NudVyPaK2HQwe0hfq8M-1eg",
-  authDomain: "mytwitter-feed.firebaseapp.com",
-  projectId: "mytwitter-feed",
-  storageBucket: "mytwitter-feed.firebasestorage.app",
-  messagingSenderId: "769496094182",
-  appId: "1:769496094182:web:8e9419b38a98b8ad323227",
-};
+const firebaseConfig = window.FIREBASE_CONFIG;
+if (!firebaseConfig?.projectId || firebaseConfig.projectId === "YOUR_PROJECT_ID") {
+  throw new Error(
+    "Missing Firebase web config. Copy public/firebase-config.example.js → public/firebase-config.js and fill in your project values."
+  );
+}
 
 const START_X_AUTH = `${location.origin}/oauth/start`;
 

@@ -1,14 +1,13 @@
 # Architecture
 
-Private friends-and-family **following feeds** backed by the X API (pay-per-use), Firebase Auth (custom tokens), Firestore, Hosting, and Cloud Functions.
+Invite-only **following feeds** backed by the X API (pay-per-use), Firebase Auth (custom tokens), Firestore, Hosting, and Cloud Functions.
 
-Live site: https://mytwitter-feed.web.app  
-Firebase project: `mytwitter-feed`
+Forkers configure their own Firebase project and Hosting URL via local files (see [README](../README.md)); nothing in tracked source should hardcode a production project id.
 
 ## Goals
 
 - Each member connects **their own** X account and sees **only their** home timeline (original posts + reposts, no replies).
-- Site is **private**: only allowlisted handles or invite redeemers can sign in. Feeds are not shared across members.
+- Site is **invite-only**: only allowlisted handles or invite redeemers can sign in. Feeds are not shared across members.
 - Poll X every **10 minutes**; UI updates live via Firestore snapshots (incremental DOM updates).
 
 ## High-level flow
@@ -42,11 +41,23 @@ flowchart LR
 | Piece | Role |
 |-------|------|
 | [`public/`](../public/) | Static SPA: Auth gate, own feed, info dialog, usage |
+| `public/firebase-config.js` | Local Firebase web config (`window.FIREBASE_CONFIG`; gitignored) |
 | Hosting rewrites | `/oauth/start` → `startXAuth`, `/oauth/callback` → `xOAuthCallback` |
 | Cloud Functions | OAuth, invites, scheduled sync, usage metering |
 | Firestore | Members, posts, tokens (Admin-only), sync state, allowlist |
 | Firebase Auth | Custom tokens only; **Auth uid = X user id** |
 | X API | OAuth 2.0 user context + `GET /2/users/:id/timelines/reverse_chronological` (via `homeTimeline`) |
+
+## Configuration
+
+| Setting | Where |
+|---------|--------|
+| Firebase project id | `.firebaserc` or `FIREBASE_PROJECT_ID` |
+| Hosting / OAuth origin | Functions param `SITE_URL` in `functions/.env.<projectId>` |
+| Web SDK config | `public/firebase-config.js` |
+| X + sync secrets | `.env` → `scripts/set-secrets.sh` → Secret Manager |
+
+`SITE_URL` must match the public HTTPS origin registered in the X Developer Portal (callback = `${SITE_URL}/oauth/callback`).
 
 ## Auth and membership
 
@@ -60,7 +71,7 @@ flowchart LR
    - Redirects to `/?token=…`; client `signInWithCustomToken` then strips the query.
 4. Returning members re-run the same X OAuth path (refreshes API tokens + session).
 
-**Admin:** first allowlist handle (bootstrap default `@billylo`) gets `role: admin` on first join if not already set. Admins call `createInvite` from the info dialog.
+**Admin:** first allowlist handle from bootstrap (`ADMIN_HANDLE`) gets `role: admin` on first join if not already set. Admins call `createInvite` from the info dialog.
 
 ## Data model
 
@@ -115,10 +126,11 @@ Pushed via [`scripts/set-secrets.sh`](../scripts/set-secrets.sh).
 
 | Script | Use |
 |--------|-----|
-| `scripts/bootstrap-family.cjs` | Seed allowlist + admin `members` doc |
+| `scripts/bootstrap-family.cjs` | Seed allowlist + admin `members` doc (`ADMIN_HANDLE` required) |
 | `scripts/set-secrets.sh` | Upload Function secrets from `.env` + service account JSON |
-| `scripts/x-oauth.cjs` | Local PKCE OAuth (emergency / CLI); family uses web sign-in |
+| `scripts/x-oauth.cjs` | Local PKCE OAuth (emergency / CLI); prefer web sign-in |
 | `scripts/x-oauth1-pin.cjs` | Legacy OAuth 1.0a PIN helper |
+| `scripts/resolve-project.cjs` | Shared Firebase project id resolution for scripts |
 
 ## Cost model
 

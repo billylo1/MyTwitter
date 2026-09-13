@@ -2,6 +2,8 @@ node_modules/
 .firebase/
 firebase-debug.log
 firebase-debug.*.log
+ui-debug.log
+.runtimeconfig.json
 functions/lib/
 *.local
 .env
@@ -10,3 +12,10 @@ functions/lib/
 .DS_Store
 serviceAccount*.json
 *-firebase-adminsdk-*.json
+credentials.json
+*.pem
+*.p12
+*.pfx
+*.key
+.firebaserc
+public/firebase-config.js

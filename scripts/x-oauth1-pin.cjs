@@ -14,6 +14,7 @@ const path = require("path");
 const { TwitterApi } = require("twitter-api-v2");
 const { initializeApp, cert, getApps } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { resolveFirebaseProjectId } = require("./resolve-project.cjs");
 
 const ROOT = path.resolve(__dirname, "..");
 
@@ -106,7 +107,7 @@ async function main() {
   if (!getApps().length) {
     initializeApp({
       credential: cert(JSON.parse(fs.readFileSync(abs, "utf8"))),
-      projectId: "mytwitter-feed",
+      projectId: resolveFirebaseProjectId(ROOT),
     });
   }
   const db = getFirestore();

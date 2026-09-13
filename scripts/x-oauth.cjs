@@ -6,11 +6,11 @@
  *   1. In the X Developer Portal, add callback: http://127.0.0.1:8765/callback
  *   2. Scopes: tweet.read, users.read, follows.read, follows.write, like.read, like.write, offline.access
  *   3. Copy .env.example → .env and fill X_CLIENT_ID / X_CLIENT_SECRET
- *   4. Download a service account JSON for mytwitter-feed and set
+ *   4. Download a service account JSON for your Firebase project and set
  *      GOOGLE_APPLICATION_CREDENTIALS (or place it at ./serviceAccount.json)
  *
  * Usage:
- *   node scripts/x-oauth.mjs
+ *   node scripts/x-oauth.cjs
  *
  * Stores tokens at users/{xUserId} so the Cloud Function can poll that feed.
  */
@@ -22,6 +22,7 @@ const path = require("path");
 const { TwitterApi } = require("twitter-api-v2");
 const { initializeApp, cert, getApps } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { resolveFirebaseProjectId } = require("./resolve-project.cjs");
 
 const ROOT = path.resolve(__dirname, "..");
 const CALLBACK_URL =
@@ -70,7 +71,7 @@ function initAdmin() {
   }
   initializeApp({
     credential: cert(JSON.parse(fs.readFileSync(credPath, "utf8"))),
-    projectId: "mytwitter-feed",
+    projectId: resolveFirebaseProjectId(ROOT),
   });
 }
 

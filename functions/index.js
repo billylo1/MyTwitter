@@ -5,7 +5,7 @@
 const crypto = require("crypto");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
-const { defineSecret } = require("firebase-functions/params");
+const { defineSecret, defineString } = require("firebase-functions/params");
 const { initializeApp, cert, getApps } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
@@ -38,8 +38,20 @@ function getSigningAuth() {
 /** Pay-per-use post-read price (USD). Keep in sync with X console. */
 const POST_READ_PRICE_USD = 0.005;
 
-const SITE_URL = "https://mytwitter-feed.web.app";
-const OAUTH_CALLBACK_URL = `${SITE_URL}/oauth/callback`;
+/** Public Hosting origin (set via `functions/.env.<projectId>` → SITE_URL=…). */
+const siteUrl = defineString("SITE_URL", {
+  default: "https://YOUR_PROJECT_ID.web.app",
+  description: "Public HTTPS origin of the Firebase Hosting site",
+});
+
+function getSiteUrl() {
+  return siteUrl.value().replace(/\/$/, "");
+}
+
+function getOauthCallbackUrl() {
+  return `${getSiteUrl()}/oauth/callback`;
+}
+
 const OAUTH_SESSION_TTL_MS = 10 * 60 * 1000;
 
 const TWEET_FIELDS = [
@@ -830,7 +842,7 @@ exports.startXAuth = onRequest(oauthSecretOpts, async (req, res) => {
       clientSecret: xClientSecret.value(),
     });
     const { url, codeVerifier, state } = client.generateOAuth2AuthLink(
-      OAUTH_CALLBACK_URL,
+      getOauthCallbackUrl(),
       {
         scope: OAUTH_SCOPES,
       }
@@ -869,7 +881,7 @@ exports.xOAuthCallback = onRequest(
   },
   async (req, res) => {
     const fail = (msg) => {
-      const u = new URL(SITE_URL);
+      const u = new URL(getSiteUrl());
       u.searchParams.set("authError", msg);
       res.redirect(302, u.toString());
     };
@@ -917,7 +929,7 @@ exports.xOAuthCallback = onRequest(
       } = await client.loginWithOAuth2({
         code: String(code),
         codeVerifier: session.codeVerifier,
-        redirectUri: OAUTH_CALLBACK_URL,
+        redirectUri: getOauthCallbackUrl(),
       });
 
       const me = await loggedClient.v2.me({
@@ -976,7 +988,7 @@ exports.xOAuthCallback = onRequest(
       const customToken = await getSigningAuth().createCustomToken(xUserId, {
         handle: normalizeHandle(handle),
       });
-      const u = new URL(SITE_URL);
+      const u = new URL(getSiteUrl());
       u.searchParams.set("token", customToken);
       res.redirect(302, u.toString());
     } catch (err) {
@@ -1024,7 +1036,7 @@ exports.createInvite = onCall(
 
     return {
       code,
-      url: `${SITE_URL}/?invite=${code}`,
+      url: `${getSiteUrl()}/?invite=${code}`,
       maxUses,
       expiresAt: expiresAt.toDate().toISOString(),
     };

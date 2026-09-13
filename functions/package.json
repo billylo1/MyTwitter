@@ -1,6 +1,12 @@
 {
   "name": "mytwitter-functions",
   "description": "Scheduled X home-timeline sync for MyTwitter feed",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/billylo1/MyTwitter.git",
+    "directory": "functions"
+  },
   "engines": {
     "node": "22"
   },

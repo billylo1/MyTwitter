@@ -14,6 +14,9 @@ import {
   onSnapshot,
   doc,
   getDoc,
+  setDoc,
+  deleteDoc,
+  serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 import {
   getFunctions,
@@ -53,11 +56,16 @@ const usageEl = document.getElementById("usage");
 
 let feedUnsub = null;
 let likesUnsub = null;
+let favoritesUnsub = null;
 let configUnsub = null;
 let invitesEnabled = false;
 let currentMember = null;
 /** @type {Set<string>} */
 let likedIds = new Set();
+/** @type {Set<string>} */
+let favoritedIds = new Set();
+/** @type {Map<string, object>} */
+const favoriteMeta = new Map();
 
 function formatUsd(amount) {
   if (typeof amount !== "number" || Number.isNaN(amount)) return "—";
@@ -298,13 +306,20 @@ function renderPost(id, data) {
 
   const url = data.url || `https://x.com/i/status/${id}`;
   const liked = likedIds.has(id);
+  const isFavoritedAuthor =
+    (data.authorId && favoritedIds.has(String(data.authorId))) ||
+    (data.repostedById && favoritedIds.has(String(data.repostedById)));
   const bodyText = data.linkPreview
     ? stripPreviewUrlsFromText(data.text || "", data.linkPreview)
     : data.text || "";
   const textBlock = bodyText
     ? `<p class="text">${linkify(bodyText)}</p>`
     : "";
-  return `<article class="card" data-id="${escapeHtml(id)}" data-url="${escapeHtml(url)}">
+  const favMark = isFavoritedAuthor
+    ? `<span class="card-favorite-mark" title="Favorited account" aria-hidden="true">★</span>`
+    : "";
+  return `<article class="card${isFavoritedAuthor ? " is-favorited-author" : ""}" data-id="${escapeHtml(id)}" data-url="${escapeHtml(url)}" data-author-id="${escapeHtml(data.authorId || "")}" data-reposted-by-id="${escapeHtml(data.repostedById || "")}">
+    ${favMark}
     <a class="card-hit" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" aria-label="View on X"></a>
     <div class="card-actions">
       <button
@@ -368,6 +383,7 @@ const authorCardHandle = document.getElementById("author-card-handle");
 const authorCardBio = document.getElementById("author-card-bio");
 const authorCardStatus = document.getElementById("author-card-status");
 const authorCardFollow = document.getElementById("author-card-follow");
+const authorCardFavorite = document.getElementById("author-card-favorite");
 /** @type {Map<string, object>} */
 const authorCardCache = new Map();
 let authorShowTimer = 0;
@@ -375,6 +391,10 @@ let authorHideTimer = 0;
 let authorFetchGen = 0;
 /** @type {object | null} */
 let authorCardState = null;
+/** Coarse pointer = touch / pen; fine + hover = desktop. */
+const finePointer =
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(hover: hover) and (pointer: fine)").matches;
 
 function authorCacheKey(handle, userId) {
   return String(userId || handle || "").toLowerCase();
@@ -429,11 +449,26 @@ function renderAuthorCard(data, { pending = false } = {}) {
   // Feed authors are usually already followed; default to following until API says otherwise.
   const following =
     typeof data.following === "boolean" ? data.following : true;
+  const authorId = data.id ? String(data.id) : "";
+  const favorited =
+    typeof data.favorited === "boolean"
+      ? data.favorited
+      : Boolean(authorId && favoritedIds.has(authorId));
   authorCardFollow.classList.toggle("hidden", isSelf);
   authorCardFollow.disabled = pending || isSelf || !data.id;
   authorCardFollow.classList.toggle("is-following", following);
   authorCardFollow.textContent = following ? "Following" : "Follow";
-  authorCardState = { ...data, following };
+  if (authorCardFavorite) {
+    authorCardFavorite.classList.toggle("hidden", isSelf);
+    authorCardFavorite.disabled = pending || isSelf || !data.id;
+    authorCardFavorite.classList.toggle("is-favorited", favorited);
+    authorCardFavorite.setAttribute("aria-pressed", favorited ? "true" : "false");
+    authorCardFavorite.textContent = favorited ? "Favorited" : "Favorite";
+    authorCardFavorite.title = favorited
+      ? "Remove from favorites"
+      : "Add to favorites";
+  }
+  authorCardState = { ...data, following, favorited };
 }
 
 async function loadAuthorCard(seed, trigger) {
@@ -492,10 +527,25 @@ function scheduleAuthorHide() {
   authorHideTimer = window.setTimeout(hideAuthorCard, 220);
 }
 
+async function openAuthorCard(trigger) {
+  window.clearTimeout(authorHideTimer);
+  window.clearTimeout(authorShowTimer);
+  await loadAuthorCard(seedFromTrigger(trigger), trigger);
+  placeAuthorCard(trigger);
+}
+
 function bindAuthorHover(el) {
   for (const trigger of el.querySelectorAll(".author-hover")) {
-    trigger.addEventListener("mouseenter", () => scheduleAuthorShow(trigger));
-    trigger.addEventListener("mouseleave", scheduleAuthorHide);
+    if (finePointer) {
+      trigger.addEventListener("mouseenter", () => scheduleAuthorShow(trigger));
+      trigger.addEventListener("mouseleave", scheduleAuthorHide);
+    }
+    trigger.addEventListener("click", (event) => {
+      if (event.target.closest("a")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void openAuthorCard(trigger);
+    });
   }
 }
 
@@ -557,6 +607,109 @@ function subscribeLikes(uid) {
       console.error(err);
     }
   );
+}
+
+function syncFavoriteMarks() {
+  for (const card of feedEl.querySelectorAll(".card")) {
+    const authorId = card.dataset.authorId || "";
+    const repostedById = card.dataset.repostedById || "";
+    const isFav =
+      (authorId && favoritedIds.has(authorId)) ||
+      (repostedById && favoritedIds.has(repostedById));
+    card.classList.toggle("is-favorited-author", isFav);
+    let mark = card.querySelector(".card-favorite-mark");
+    if (isFav && !mark) {
+      mark = document.createElement("span");
+      mark.className = "card-favorite-mark";
+      mark.title = "Favorited account";
+      mark.setAttribute("aria-hidden", "true");
+      mark.textContent = "★";
+      card.prepend(mark);
+    } else if (!isFav && mark) {
+      mark.remove();
+    }
+  }
+  if (authorCardState?.id) {
+    renderAuthorCard({
+      ...authorCardState,
+      favorited: favoritedIds.has(String(authorCardState.id)),
+    });
+  }
+}
+
+function subscribeFavorites(uid) {
+  if (favoritesUnsub) {
+    favoritesUnsub();
+    favoritesUnsub = null;
+  }
+  favoritedIds = new Set();
+  favoriteMeta.clear();
+  favoritesUnsub = onSnapshot(
+    collection(db, "users", uid, "favorites"),
+    (snap) => {
+      favoritedIds = new Set(snap.docs.map((d) => d.id));
+      favoriteMeta.clear();
+      for (const d of snap.docs) {
+        favoriteMeta.set(d.id, d.data() || {});
+      }
+      syncFavoriteMarks();
+    },
+    (err) => {
+      console.error(err);
+    }
+  );
+}
+
+async function toggleFavorite(author) {
+  const uid = auth.currentUser?.uid;
+  const authorId = author?.id ? String(author.id) : "";
+  if (!uid || !authorId || author.isSelf) return;
+  const next = !favoritedIds.has(authorId);
+  const ref = doc(db, "users", uid, "favorites", authorId);
+  if (authorCardFavorite) {
+    authorCardFavorite.disabled = true;
+    authorCardFavorite.classList.toggle("is-favorited", next);
+    authorCardFavorite.setAttribute("aria-pressed", next ? "true" : "false");
+    authorCardFavorite.textContent = next ? "Favorited" : "Favorite";
+  }
+  try {
+    if (next) {
+      await setDoc(ref, {
+        handle: author.handle || "",
+        name: author.name || author.handle || "",
+        avatar: author.avatar || null,
+        favoritedAt: serverTimestamp(),
+      });
+      favoritedIds.add(authorId);
+    } else {
+      await deleteDoc(ref);
+      favoritedIds.delete(authorId);
+    }
+    const updated = { ...author, favorited: next };
+    authorCardCache.set(authorCacheKey(updated.handle, updated.id), updated);
+    renderAuthorCard(updated);
+    syncFavoriteMarks();
+  } catch (err) {
+    console.error(err);
+    if (authorCardFavorite) {
+      authorCardFavorite.classList.toggle("is-favorited", !next);
+      authorCardFavorite.setAttribute(
+        "aria-pressed",
+        !next ? "true" : "false"
+      );
+      authorCardFavorite.textContent = !next ? "Favorited" : "Favorite";
+    }
+    const message = err.message || "Could not update favorite.";
+    statusEl.textContent = message;
+    if (authorCardState) {
+      renderAuthorCard({ ...authorCardState, error: message });
+    }
+  } finally {
+    if (authorCardFavorite && authorCardState) {
+      authorCardFavorite.disabled =
+        authorCardState.isSelf || !authorCardState.id;
+    }
+  }
 }
 
 async function toggleLike(card, btn) {
@@ -831,6 +984,7 @@ async function enterApp(user) {
   subscribePublicConfig();
   statusEl.textContent = "Connecting…";
   subscribeLikes(user.uid);
+  subscribeFavorites(user.uid);
   subscribeFeed(user.uid);
 }
 
@@ -858,7 +1012,20 @@ function wireUi() {
     authorCardEl.addEventListener("mouseenter", () => {
       window.clearTimeout(authorHideTimer);
     });
-    authorCardEl.addEventListener("mouseleave", scheduleAuthorHide);
+    authorCardEl.addEventListener("mouseleave", () => {
+      if (finePointer) scheduleAuthorHide();
+    });
+    document.addEventListener("click", (event) => {
+      if (authorCardEl.classList.contains("hidden")) return;
+      if (authorCardEl.contains(event.target)) return;
+      if (event.target.closest(".author-hover")) return;
+      hideAuthorCard();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !authorCardEl.classList.contains("hidden")) {
+        hideAuthorCard();
+      }
+    });
     authorCardFollow.addEventListener("mouseenter", () => {
       if (authorCardFollow.classList.contains("is-following")) {
         authorCardFollow.textContent = "Unfollow";
@@ -892,6 +1059,15 @@ function wireUi() {
             : "Could not update follow.";
         renderAuthorCard({ ...current, error: message });
       }
+    });
+  }
+
+  if (authorCardFavorite) {
+    authorCardFavorite.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!authorCardState?.id) return;
+      await toggleFavorite(authorCardState);
     });
   }
 
@@ -978,7 +1154,13 @@ async function boot() {
         likesUnsub();
         likesUnsub = null;
       }
+      if (favoritesUnsub) {
+        favoritesUnsub();
+        favoritesUnsub = null;
+      }
       likedIds = new Set();
+      favoritedIds = new Set();
+      favoriteMeta.clear();
       currentMember = null;
       invitesEnabled = false;
       if (configUnsub) {

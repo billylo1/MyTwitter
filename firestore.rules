@@ -56,6 +56,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Curated watchlist (MyTwitter-only; not X bookmarks).
+    match /users/{uid}/favorites/{authorId} {
+      allow read, create, update, delete: if memberEnabled() && isOwner(uid);
+    }
+
     // Tokens and sync metadata — Admin SDK only.
     match /users/{uid} {
       allow read, write: if false;

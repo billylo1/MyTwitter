@@ -11,7 +11,7 @@ Thankfully, their APIs allow us to build our own client so the feed can stay neu
 
 I spent some time on this web app so you can self-host your own X client as a hobby project. You get the benefits of real-time posts from people you follow, without being steered by X algorithm. 
 
-Setup is straightforward, and hosting does not cost much (Firebase free tier should be enough). X API usage is about `$0.005` per post retrieved. For me, that is a reasonable tradeoff for a non-biased feed with a clean interface. 
+Setup is straightforward, and hosting does not cost much (Firebase free tier should be enough). X API usage is about `$0.005` per post retrieved and any user can join as developer to use it. For me, that is a reasonable tradeoff for a non-biased feed with a clean interface. 
 
 I hope this helps.
 

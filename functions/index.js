@@ -80,6 +80,8 @@ const OAUTH_SCOPES = [
   "users.read",
   "follows.read",
   "follows.write",
+  "like.read",
+  "like.write",
   "offline.access",
 ];
 const PROFILE_USER_FIELDS = [
@@ -331,6 +333,12 @@ function mapTweetV2(tweet, includes) {
     retweet
       ? includes?.users?.find((u) => u.id === tweet.author_id) || null
       : null;
+  // Self-reposts (author bumping their own post) look like normal posts.
+  const selfRepost =
+    retweet &&
+    String(authorId || "") !== "" &&
+    String(authorId) === String(tweet.author_id);
+  const showAsRepost = retweet && !selfRepost;
   const handle = author?.username || "unknown";
   const statusId = contentTweet.id || tweet.id;
   const media = mediaFromV2(contentTweet, includes);
@@ -351,13 +359,16 @@ function mapTweetV2(tweet, includes) {
     url: handle
       ? `https://x.com/${handle}/status/${statusId}`
       : `https://x.com/i/status/${statusId}`,
-    isRetweet: retweet,
-    repostedById: reposter?.id || (retweet ? tweet.author_id : null) || null,
-    repostedByHandle: reposter?.username || null,
-    repostedByName: reposter?.name || null,
-    repostedByAvatar: reposter?.profile_image_url
-      ? reposter.profile_image_url.replace("_normal", "_bigger")
+    isRetweet: showAsRepost,
+    repostedById: showAsRepost
+      ? reposter?.id || tweet.author_id || null
       : null,
+    repostedByHandle: showAsRepost ? reposter?.username || null : null,
+    repostedByName: showAsRepost ? reposter?.name || null : null,
+    repostedByAvatar:
+      showAsRepost && reposter?.profile_image_url
+        ? reposter.profile_image_url.replace("_normal", "_bigger")
+        : null,
     fetchedAt: FieldValue.serverTimestamp(),
   };
 }
@@ -390,6 +401,11 @@ function mapTweetV1(tweet) {
   const user = content.user || tweet.user || {};
   const handle = user.screen_name || "unknown";
   const reposter = source ? tweet.user : null;
+  const selfRepost =
+    Boolean(source) &&
+    String(user.id_str || "") !== "" &&
+    String(user.id_str) === String(tweet.user?.id_str || "");
+  const showAsRepost = Boolean(source) && !selfRepost;
   const media = mediaFromV1(content);
   return {
     text: content.full_text || content.text || "",
@@ -405,13 +421,14 @@ function mapTweetV1(tweet) {
     mediaUrls: mediaUrlsFromItems(media),
     media,
     url: `https://x.com/${handle}/status/${content.id_str || tweet.id_str}`,
-    isRetweet: Boolean(source),
-    repostedById: reposter?.id_str || null,
-    repostedByHandle: reposter?.screen_name || null,
-    repostedByName: reposter?.name || null,
-    repostedByAvatar: reposter?.profile_image_url_https
-      ? reposter.profile_image_url_https.replace("_normal", "_bigger")
-      : null,
+    isRetweet: showAsRepost,
+    repostedById: showAsRepost ? reposter?.id_str || null : null,
+    repostedByHandle: showAsRepost ? reposter?.screen_name || null : null,
+    repostedByName: showAsRepost ? reposter?.name || null : null,
+    repostedByAvatar:
+      showAsRepost && reposter?.profile_image_url_https
+        ? reposter.profile_image_url_https.replace("_normal", "_bigger")
+        : null,
     fetchedAt: FieldValue.serverTimestamp(),
   };
 }
@@ -1036,7 +1053,7 @@ function mapAuthorCard(user, viewerId) {
   };
 }
 
-function throwXError(err) {
+function throwXError(err, reconnectMessage) {
   const detail =
     err?.data?.detail || err?.data?.title || err?.message || "X API error";
   const code = Number(err?.code) || 0;
@@ -1048,7 +1065,8 @@ function throwXError(err) {
   ) {
     throw new HttpsError(
       "failed-precondition",
-      "Sign out and sign in again to follow people from MyTwitter."
+      reconnectMessage ||
+        "Sign out and sign in again to reconnect X permissions."
     );
   }
   throw new HttpsError("internal", String(detail));
@@ -1138,10 +1156,50 @@ exports.setFollowing = onCall(followFnOpts, async (request) => {
     if (follow) await client.v2.follow(xUserId, targetId);
     else await client.v2.unfollow(xUserId, targetId);
   } catch (err) {
-    throwXError(err);
+    throwXError(
+      err,
+      "Sign out and sign in again to follow people from MyTwitter."
+    );
   }
 
   return { userId: targetId, following: follow };
+});
+
+exports.setLiked = onCall(followFnOpts, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+  const tweetId = String(request.data?.tweetId || "").trim();
+  const like = request.data?.like !== false;
+  if (!tweetId) {
+    throw new HttpsError("invalid-argument", "tweetId required");
+  }
+
+  const { client, xUserId } = await callerClient(request.auth.uid);
+  const likeRef = db
+    .collection("users")
+    .doc(request.auth.uid)
+    .collection("likes")
+    .doc(tweetId);
+
+  try {
+    if (like) {
+      await client.v2.like(xUserId, tweetId);
+      await likeRef.set({
+        likedAt: FieldValue.serverTimestamp(),
+      });
+    } else {
+      await client.v2.unlike(xUserId, tweetId);
+      await likeRef.delete();
+    }
+  } catch (err) {
+    throwXError(
+      err,
+      "Sign out and sign in again to like posts from MyTwitter."
+    );
+  }
+
+  return { tweetId, liked: like };
 });
 
 exports.syncTimeline = onSchedule(

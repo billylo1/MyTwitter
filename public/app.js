@@ -54,8 +54,11 @@ const refreshedEl = document.getElementById("refreshed");
 const usageEl = document.getElementById("usage");
 
 let feedUnsub = null;
+let likesUnsub = null;
 let configUnsub = null;
 let currentMember = null;
+/** @type {Set<string>} */
+let likedIds = new Set();
 
 function formatUsd(amount) {
   if (typeof amount !== "number" || Number.isNaN(amount)) return "—";
@@ -199,7 +202,8 @@ function renderMedia(data) {
           previewUrl: url,
         }));
   if (!items.length) return "";
-  return `<div class="media">${items.map(renderMediaItem).join("")}</div>`;
+  const multi = items.length > 1 ? " media-multi" : "";
+  return `<div class="media${multi}" data-count="${items.length}">${items.map(renderMediaItem).join("")}</div>`;
 }
 
 function renderPost(id, data) {
@@ -209,8 +213,16 @@ function renderPost(id, data) {
     data.authorAvatar ||
     `https://abs.twimg.com/sticky/default_profile_images/default_profile_bigger.png`;
   const reposterHandle = data.repostedByHandle || "";
+  const sameAuthor =
+    (data.repostedById &&
+      data.authorId &&
+      String(data.repostedById) === String(data.authorId)) ||
+    (reposterHandle &&
+      handle &&
+      reposterHandle.toLowerCase() === String(handle).toLowerCase());
+  const showRepost = Boolean(data.isRetweet) && !sameAuthor;
   const repostLine =
-    data.isRetweet && reposterHandle
+    showRepost && reposterHandle
       ? `<p class="repost-line">
           <span
             class="author-hover reposter-hover"
@@ -221,13 +233,37 @@ function renderPost(id, data) {
           >@${escapeHtml(reposterHandle)}</span>
           <span class="repost-label">reposted</span>
         </p>`
-      : data.isRetweet
+      : showRepost
         ? `<p class="repost-line"><span class="repost-label">reposted</span></p>`
         : "";
 
   const url = data.url || `https://x.com/i/status/${id}`;
-  return `<article class="card" data-id="${escapeHtml(id)}">
+  const liked = likedIds.has(id);
+  return `<article class="card" data-id="${escapeHtml(id)}" data-url="${escapeHtml(url)}">
     <a class="card-hit" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" aria-label="View on X"></a>
+    <div class="card-actions">
+      <button
+        type="button"
+        class="action-btn action-like${liked ? " is-liked" : ""}"
+        aria-label="${liked ? "Unlike" : "Like"}"
+        aria-pressed="${liked ? "true" : "false"}"
+        title="${liked ? "Unlike" : "Like"}"
+      >
+        <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="action-btn action-share"
+        aria-label="Share"
+        title="Share"
+      >
+        <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/>
+        </svg>
+      </button>
+    </div>
     ${repostLine}
     <div class="card-header">
       <div class="author-hover" data-author-id="${escapeHtml(data.authorId || "")}" data-author-handle="${escapeHtml(handle)}" data-author-name="${escapeHtml(data.authorName || handle)}" data-author-avatar="${escapeHtml(avatar)}">
@@ -421,6 +457,134 @@ function unwatchCardVideos(el) {
   }
 }
 
+function setLikeButtonState(btn, liked) {
+  btn.classList.toggle("is-liked", liked);
+  btn.setAttribute("aria-pressed", liked ? "true" : "false");
+  btn.setAttribute("aria-label", liked ? "Unlike" : "Like");
+  btn.title = liked ? "Unlike" : "Like";
+}
+
+function syncLikeButtons() {
+  for (const btn of feedEl.querySelectorAll(".action-like")) {
+    const id = btn.closest(".card")?.dataset.id;
+    if (!id) continue;
+    setLikeButtonState(btn, likedIds.has(id));
+  }
+}
+
+function subscribeLikes(uid) {
+  if (likesUnsub) {
+    likesUnsub();
+    likesUnsub = null;
+  }
+  likedIds = new Set();
+  likesUnsub = onSnapshot(
+    collection(db, "users", uid, "likes"),
+    (snap) => {
+      likedIds = new Set(snap.docs.map((d) => d.id));
+      syncLikeButtons();
+    },
+    (err) => {
+      console.error(err);
+    }
+  );
+}
+
+async function toggleLike(card, btn) {
+  const tweetId = card.dataset.id;
+  if (!tweetId || btn.disabled) return;
+  const nextLiked = !btn.classList.contains("is-liked");
+  setLikeButtonState(btn, nextLiked);
+  btn.disabled = true;
+  try {
+    const setLiked = httpsCallable(functions, "setLiked");
+    await setLiked({ tweetId, like: nextLiked });
+    if (nextLiked) likedIds.add(tweetId);
+    else likedIds.delete(tweetId);
+  } catch (err) {
+    setLikeButtonState(btn, !nextLiked);
+    const message =
+      err.code === "functions/failed-precondition"
+        ? err.message
+        : "Could not update like.";
+    console.error(err);
+    btn.title = message;
+    statusEl.textContent = message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function flashActionLabel(btn, label) {
+  const actions = btn.closest(".card-actions");
+  if (!actions) return;
+  let tip = actions.querySelector(".action-tip");
+  if (!tip) {
+    tip = document.createElement("span");
+    tip.className = "action-tip";
+    tip.setAttribute("role", "status");
+    actions.appendChild(tip);
+  }
+  tip.textContent = label;
+  tip.classList.add("is-visible");
+  btn.setAttribute("aria-label", label);
+  btn.classList.add("is-copied");
+  window.clearTimeout(tip._hideTimer);
+  tip._hideTimer = window.setTimeout(() => {
+    tip.classList.remove("is-visible");
+    tip.textContent = "";
+    if (btn.classList.contains("action-share")) {
+      btn.setAttribute("aria-label", "Share");
+      btn.title = "Share";
+    }
+    btn.classList.remove("is-copied");
+  }, 1800);
+}
+
+async function sharePost(card, btn) {
+  const url = card.dataset.url || `https://x.com/i/status/${card.dataset.id}`;
+  const text = card.querySelector(".text")?.textContent?.trim() || "";
+  const shareData = {
+    title: "Post from MyTwitter",
+    text: text.slice(0, 200),
+    url,
+  };
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  btn.disabled = true;
+  try {
+    if (isMobile && typeof navigator.share === "function") {
+      const canShare =
+        typeof navigator.canShare !== "function" || navigator.canShare(shareData);
+      if (canShare) {
+        await navigator.share(shareData);
+        return;
+      }
+    }
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(url);
+      flashActionLabel(btn, "Link copied");
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  } catch (err) {
+    if (err?.name === "AbortError") return;
+    console.error(err);
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        flashActionLabel(btn, "Link copied");
+        return;
+      }
+    } catch (copyErr) {
+      console.error(copyErr);
+    }
+    flashActionLabel(btn, "Could not share");
+    statusEl.textContent = "Could not share post.";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function subscribeFeed(uid) {
   if (feedUnsub) {
     feedUnsub();
@@ -596,6 +760,7 @@ async function enterApp(user) {
 
   subscribePublicConfig();
   statusEl.textContent = "Connecting…";
+  subscribeLikes(user.uid);
   subscribeFeed(user.uid);
 }
 
@@ -660,6 +825,39 @@ function wireUi() {
     });
   }
 
+  feedEl.addEventListener("click", (event) => {
+    const likeBtn = event.target.closest(".action-like");
+    if (likeBtn && feedEl.contains(likeBtn)) {
+      event.preventDefault();
+      event.stopPropagation();
+      const card = likeBtn.closest(".card");
+      if (card) void toggleLike(card, likeBtn);
+      return;
+    }
+    const shareBtn = event.target.closest(".action-share");
+    if (shareBtn && feedEl.contains(shareBtn)) {
+      event.preventDefault();
+      event.stopPropagation();
+      const card = shareBtn.closest(".card");
+      if (card) void sharePost(card, shareBtn);
+      return;
+    }
+
+    // Card body opens X; skip controls / author / links / video.
+    if (
+      event.target.closest(
+        "a, button, video, .card-actions, .author-hover, .action-btn"
+      )
+    ) {
+      return;
+    }
+    const card = event.target.closest(".card");
+    const url = card?.dataset?.url;
+    if (!url) return;
+    event.preventDefault();
+    window.open(url, "_blank", "noopener,noreferrer");
+  });
+
   feedEl.addEventListener(
     "play",
     (event) => {
@@ -706,6 +904,11 @@ async function boot() {
         feedUnsub();
         feedUnsub = null;
       }
+      if (likesUnsub) {
+        likesUnsub();
+        likesUnsub = null;
+      }
+      likedIds = new Set();
       if (configUnsub) {
         configUnsub();
         configUnsub = null;

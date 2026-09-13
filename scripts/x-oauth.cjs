@@ -4,7 +4,7 @@
  *
  * Prerequisites:
  *   1. In the X Developer Portal, add callback: http://127.0.0.1:8765/callback
- *   2. Scopes: tweet.read, users.read, follows.read, follows.write, offline.access
+ *   2. Scopes: tweet.read, users.read, follows.read, follows.write, like.read, like.write, offline.access
  *   3. Copy .env.example → .env and fill X_CLIENT_ID / X_CLIENT_SECRET
  *   4. Download a service account JSON for mytwitter-feed and set
  *      GOOGLE_APPLICATION_CREDENTIALS (or place it at ./serviceAccount.json)
@@ -27,6 +27,15 @@ const ROOT = path.resolve(__dirname, "..");
 const CALLBACK_URL =
   process.env.X_CALLBACK_URL || "http://localhost:8765/callback";
 const PORT = Number(new URL(CALLBACK_URL).port || 8765);
+const OAUTH_SCOPES = [
+  "tweet.read",
+  "users.read",
+  "follows.read",
+  "follows.write",
+  "like.read",
+  "like.write",
+  "offline.access",
+];
 
 function loadEnv() {
   const envPath = path.join(ROOT, ".env");

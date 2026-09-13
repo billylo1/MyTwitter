@@ -305,11 +305,14 @@ body {
   inset: 0;
   z-index: 1;
   border-radius: inherit;
+  /* Let clicks reach buttons/media; card open is handled in JS. */
+  pointer-events: none;
 }
 
 .card a:not(.card-hit) {
   position: relative;
   z-index: 2;
+  pointer-events: auto;
 }
 
 .card-header {
@@ -317,6 +320,7 @@ body {
   gap: 0.75rem;
   align-items: center;
   margin-bottom: 0.65rem;
+  padding-right: 5.25rem;
 }
 
 .author-hover {
@@ -376,6 +380,7 @@ body {
   margin: 0 0 0.45rem;
   color: var(--muted);
   font-size: 0.82rem;
+  padding-right: 5.25rem;
 }
 
 .reposter-hover {
@@ -411,6 +416,10 @@ body {
   margin-top: 0.75rem;
 }
 
+.media.media-multi {
+  grid-template-columns: 1fr 1fr;
+}
+
 .media img,
 .media video {
   width: 100%;
@@ -421,14 +430,113 @@ body {
   object-fit: cover;
 }
 
+.media.media-multi img,
+.media.media-multi video {
+  max-height: 220px;
+  aspect-ratio: 1;
+  height: 100%;
+}
+
 .media video {
   background: #000;
   object-fit: contain;
 }
 
+.media.media-multi video {
+  object-fit: cover;
+}
+
 .media video.media-video {
   position: relative;
   z-index: 2;
+}
+
+.card-actions {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.45rem;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  margin: 0;
+  pointer-events: auto;
+}
+
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  position: relative;
+  z-index: 5;
+  pointer-events: auto;
+}
+
+.action-btn:hover {
+  background: rgba(29, 155, 240, 0.12);
+  color: var(--accent);
+}
+
+.action-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.action-icon {
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: currentColor;
+  pointer-events: none;
+}
+
+.action-like:not(.is-liked) .action-icon {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linejoin: round;
+}
+
+.action-like.is-liked {
+  color: #f91880;
+}
+
+.action-like:hover {
+  background: rgba(249, 24, 128, 0.12);
+  color: #f91880;
+}
+
+.action-share.is-copied {
+  color: var(--accent);
+}
+
+.action-tip {
+  position: absolute;
+  top: calc(100% + 0.15rem);
+  right: 0;
+  padding: 0.25rem 0.55rem;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(-2px);
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.action-tip.is-visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .empty {

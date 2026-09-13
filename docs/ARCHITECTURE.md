@@ -70,6 +70,7 @@ flowchart LR
 | `users/{xUserId}` | Admin only | OAuth tokens, `enabled`, `authType`, profile fields |
 | `users/{xUserId}/posts/{tweetId}` | Read **own** feed | Feed card fields (`text`, author, media, `isRetweet`, `repostedByHandle`, …) |
 | `users/{xUserId}/authors/{id}` | Read **own** feed | Cached author profiles |
+| `users/{xUserId}/likes/{tweetId}` | Read **own** likes | Mirror of likes made from the site (`likedAt`) |
 | `users/{xUserId}/sync/state` | Admin only | `sinceId`, last sync stats/errors |
 | `config/public` | Read if member | `usage.*`, `lastRefreshedAt` |
 | `config/allowlist` | Admin only | `handles[]`, `xUserIds[]` |
@@ -94,8 +95,9 @@ Rules: [`firestore.rules`](../firestore.rules) — no world-readable posts.
 - Authenticated: feed is always the signed-in user’s own timeline. No member switcher.
 - Feed listener uses Firestore `docChanges()` to add/update/remove cards without full `innerHTML` rebuilds.
 - Video posts play inline (`<video controls>`); animated GIFs autoplay muted and loop. Card tap still opens X except on video controls.
+- Each card has **Like** (X API via `setLiked`) and **Share** (Web Share API, clipboard fallback). Liked state is mirrored under `users/{uid}/likes`.
 - Header: title, handle, relative refresh time, info, sign out on one line. Info dialog: status, usage (cumulative + this cycle), admin invite button.
-- Hover an author in the feed for a profile card with Follow / Unfollow (`getAuthorCard`, `setFollowing`). Requires a fresh X sign-in after `follows.write` was added.
+- Hover an author in the feed for a profile card with Follow / Unfollow (`getAuthorCard`, `setFollowing`). Requires a fresh X sign-in after `follows.write` / `like.write` scopes were added.
 
 ## Secrets (Cloud Functions)
 

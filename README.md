@@ -8,7 +8,7 @@ Private Firebase-hosted feeds: each friend/family member signs in with **X**, th
 ## Stack
 
 - Firebase Hosting + Firestore + Cloud Functions (Gen 2) + Auth (custom tokens)
-- X API OAuth 2.0 (`tweet.read`, `users.read`, `follows.read`, `follows.write`, `offline.access`)
+- X API OAuth 2.0 (`tweet.read`, `users.read`, `follows.read`, `follows.write`, `like.read`, `like.write`, `offline.access`)
 - Membership via handle allowlist and/or invite links
 
 ## Prerequisites
@@ -39,7 +39,7 @@ Create or open a **pay-per-use** app with **User authentication**:
 | Website URL | `https://mytwitter-feed.web.app` |
 | Callback URI | `https://mytwitter-feed.web.app/oauth/callback` |
 | Optional local callback | `http://localhost:8765/callback` |
-| Scopes | `tweet.read`, `users.read`, `follows.read`, `follows.write`, `offline.access` |
+| Scopes | `tweet.read`, `users.read`, `follows.read`, `follows.write`, `like.read`, `like.write`, `offline.access` |
 
 Copy **OAuth 2.0 Client ID / Client Secret**, **API Key / API Secret**, and **Bearer Token**.
 

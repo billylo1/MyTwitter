@@ -51,6 +51,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /users/{uid}/likes/{tweetId} {
+      allow read: if memberEnabled() && isOwner(uid);
+      allow write: if false;
+    }
+
     // Tokens and sync metadata — Admin SDK only.
     match /users/{uid} {
       allow read, write: if false;

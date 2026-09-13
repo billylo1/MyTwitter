@@ -5,7 +5,7 @@
 
 ## Why
 
-X is useful. But its feed algorithm is not designed to serve us. It is primarily optimized to keep our attention, prioritizing posts that trigger emotions (delight, rage, and the like). Thankfully, their APIs and terms of use allow building your own client so the feed can stay neutral — just time-ordered.
+X is useful. However its feed algorithm is primarily optimized to keep our attention, prioritizing posts that trigger emotions (delight, rage, and the like). Thankfully, their APIs and terms of use allow building your own client so the feed can stay neutral — just time-ordered.
 
 I spent some time on this web app (self-hosted) so you can make your own X client as a hobby project. You get the benefits of real-time posts from people you follow, without being steered by X algorithm. Setup is not complex, and hosting does not cost much (Firebase free tier should be enough). X API usage is about `$0.005` per post retrieved. For me, that is a reasonable tradeoff for a non-biased feed and an ad-free experience. I hope this helps.
 

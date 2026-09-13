@@ -1,18 +1,15 @@
 # MyTwitter
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-
-Self-hosted Firebase app: each allowlisted (or invited) member signs in with **X**, then sees **only their own** following timeline — original posts and reposts, newest first, no replies; full text for reposts; media and link previews when X provides them. Polls home timelines every 10 minutes.
-
-**Architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md) · **Security:** [SECURITY.md](SECURITY.md)
-
 > Unofficial project. Not affiliated with, endorsed by, or sponsored by X Corp. or Twitter.
 
 ## Why
 
 X is useful. But its feed algorithm is not designed to serve us. It is primarily optimized to keep our attention, prioritizing posts that trigger emotions (delight, rage, and the like). Thankfully, their APIs and terms of use allow building your own client so the feed can stay neutral — just time-ordered.
 
-I spent some time on this repo so you can host your own client and get the benefits of X without being steered by that algorithm. Setup is not complex, and hosting does not cost much (Firebase free tier should be enough for a small group). X API usage is about `$0.005` per post retrieved. For me, that is a reasonable tradeoff for a non-biased feed and an ad-free experience. I hope this helps.
+I spent some time on this web app (self-hosted) so you can make your own X client as a hobby project. You get the benefits of real-time posts from people you follow, without being steered by X algorithm. Setup is not complex, and hosting does not cost much (Firebase free tier should be enough). X API usage is about `$0.005` per post retrieved. For me, that is a reasonable tradeoff for a non-biased feed and an ad-free experience. I hope this helps.
+
+**Architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md) · **Security:** [SECURITY.md](SECURITY.md)
 
 ## Features
 

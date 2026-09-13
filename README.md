@@ -69,7 +69,7 @@ Create or open a **pay-per-use** app with **User authentication**:
 | App type | Web App |
 | Website URL | `https://YOUR_PROJECT_ID.web.app` |
 | Callback URI | `https://YOUR_PROJECT_ID.web.app/oauth/callback` |
-| Optional local callback | `http://localhost:8765/callback` |
+| Optional local callback | `http://localhost:8765/callback` (also register `http://127.0.0.1:8765/callback` if you use that host) |
 | Scopes | `tweet.read`, `users.read`, `follows.read`, `follows.write`, `like.read`, `like.write`, `offline.access` |
 
 Copy **OAuth 2.0 Client ID / Client Secret**, **API Key / API Secret**, and **Bearer Token**.
@@ -123,9 +123,10 @@ GOOGLE_APPLICATION_CREDENTIALS=./serviceAccount.json
 
 ```bash
 ADMIN_HANDLE=yourhandle EXTRA_HANDLES=alice,bob npm run bootstrap
+# optional: ADMIN_X_USER_ID=… if no users/{id} matches ADMIN_HANDLE yet
 ```
 
-This writes `config/allowlist` and, if a matching `users/{id}` already exists, `members/{id}` with `role: admin`.
+This writes `config/allowlist` and, if a matching `users/{id}` already exists (or `ADMIN_X_USER_ID` is set), `members/{id}` with `role: admin`.
 
 ### 6. Secrets and deploy
 
@@ -140,10 +141,10 @@ npm run deploy
 
 1. Open `https://YOUR_PROJECT_ID.web.app`
 2. **Sign in with X** (allowlisted handles join without an invite)
-3. Wait for the scheduled sync, or trigger manually (below)
+3. First sign-in kicks off a background sync; after that, scheduled sync runs about every 10 minutes (or trigger `syncNow` below)
 4. Optional invites: in Firestore set `config/public.invitesEnabled` to `true`, then admins can open the **i** dialog → **Create invite link**
 
-Invite URL shape (only when invites are enabled): `https://YOUR_PROJECT_ID.web.app/?invite=CODE`
+Invite URL shape (only when invites are enabled): `https://YOUR_PROJECT_ID.web.app/?invite=CODE`. With invites disabled, `?invite=` still shows a prompt in the UI, but the server will not redeem the code (allowlisted handles can still join).
 
 ### 8. Manual sync (optional)
 
@@ -200,17 +201,19 @@ docs/ARCHITECTURE.md
 | Site: “X sign-in failed” | Check `xOAuthCallback` logs; custom-token signing needs `ADMIN_SDK_CREDENTIALS`; confirm `SITE_URL` |
 | Missing Firebase web config | Copy `firebase-config.example.js` → `firebase-config.js` |
 | “not invited” | Handle not on allowlist; or invite missing/invalid; or `invitesEnabled` is false |
-| Feed empty after login | Wait for sync / run `syncNow`; confirm `users/{uid}.enabled` |
+| Feed empty after login | Wait for post-OAuth sync / scheduled sync / `syncNow`; confirm `users/{uid}.enabled`; UI shows up to 100 recent posts |
+| Like / follow / hover card fails | Sign out and sign in again so tokens include `follows.write` / `like.write` |
 | No link preview on old posts | Previews are written on sync; re-sync after deploying link-preview support |
 | Truncated `RT @…` text on old cards | Fixed in sync via referenced-tweet expansion; re-sync overwrites recent posts |
 
 ## Security notes
 
 - Do not commit `.env`, `serviceAccount.json`, `.firebaserc`, or `public/firebase-config.js`.
-- Firestore posts/members/usage are **member-only**.
+- Each member can read **only their own** posts, likes, and member doc — not other members’ feeds.
+- `config/public.usage` is shared across members (one X project meter) and shown in the info dialog.
 - Firebase Auth uid equals X user id.
 - Firebase web API keys are public-by-design; lock down Auth domains, API key restrictions, and Firestore rules.
-- Pay-per-use billing is shared for the X project; usage appears in the info dialog.
+- Pay-per-use billing is shared for the X project.
 
 ## Before making the repo public
 

@@ -18,3 +18,7 @@ Include a short description, steps to reproduce, and impact. We will acknowledge
 ## Secrets hygiene
 
 Never commit `.env`, `serviceAccount.json`, `.firebaserc` with production ids you want private, or `public/firebase-config.js` with your live Firebase web config if you treat that as deployment-specific. See `.gitignore` and `.env.example`.
+
+## Privacy model
+
+Firestore rules enforce that each signed-in member can read only their own feed, likes, and member document. There is no cross-member timeline access. Shared project usage stats live under `config/public` and are visible to all members. Social actions (like/follow) require Firebase Auth plus an active `members/{uid}` with valid X user tokens.

@@ -6,7 +6,7 @@ Thanks for contributing. This app is private following feeds from X on Firebase 
 
 Follow the full fork guide in [README.md](README.md):
 
-1. Copy local config from the examples (`.firebaserc`, `public/firebase-config.js`, `.env`, `functions/.env.<projectId>`).
+1. Copy local config from the examples (`.firebaserc`, `public/firebase-config.js`, `.env`, and `functions/.env.<projectId>` with `SITE_URL=…`).
 2. Use **Node.js 22+**.
 3. Install: `npm install` and `cd functions && npm install`.
 
@@ -22,6 +22,7 @@ Do **not** commit:
 - Keep changes small and explain **why** in the PR description.
 - Match existing style in `public/`, `functions/`, and `scripts/`.
 - Update [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) when you change auth, data model, sync, or deploy shape.
+- Update [README.md](README.md) features / setup / troubleshooting when you add user-visible behavior.
 - Do not add credentials, personal handles, or production project ids as defaults.
 
 ## Code of conduct

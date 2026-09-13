@@ -652,12 +652,63 @@ body {
   margin-bottom: 0.55rem;
 }
 
+.author-card-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
 .author-card-avatar {
   width: 64px;
   height: 64px;
   border-radius: 50%;
   object-fit: cover;
   background: var(--border);
+}
+
+.favorite-btn {
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  padding: 0.35rem 0.95rem;
+  cursor: pointer;
+}
+
+.favorite-btn:hover {
+  border-color: #f5a524;
+  color: #f5a524;
+}
+
+.favorite-btn.is-favorited {
+  border-color: #f5a524;
+  background: rgba(245, 165, 36, 0.12);
+  color: #f5a524;
+}
+
+.favorite-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.card.is-favorited-author {
+  box-shadow: inset 3px 0 0 #f5a524;
+}
+
+.card-favorite-mark {
+  position: absolute;
+  top: 0.65rem;
+  left: 0.65rem;
+  z-index: 2;
+  color: #f5a524;
+  font-size: 0.85rem;
+  line-height: 1;
+  pointer-events: none;
 }
 
 .follow-btn {

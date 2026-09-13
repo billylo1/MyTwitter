@@ -99,6 +99,7 @@ Hosting also sets `Referrer-Policy: no-referrer`. Firestore database location is
 | `users/{xUserId}/posts/{tweetId}` | Read **own** feed | `text`, author fields, `media[]`, `linkPreview`, `url`, `isRetweet`, repost metadata, `fetchedAt`, optional `mediaCheckedAt` |
 | `users/{xUserId}/authors/{id}` | Read **own** (rules) | Cached on sync (`name`, `username`, `profileImageUrl`, `description`, `verified`, `updatedAt`); UI loads live cards via `getAuthorCard` |
 | `users/{xUserId}/likes/{tweetId}` | Read **own** likes | Mirror of likes made from the site (`likedAt`) |
+| `users/{xUserId}/favorites/{authorId}` | Read/write **own** | Curated watchlist (`handle`, `name`, `avatar`, `favoritedAt`); MyTwitter-only, not X bookmarks |
 | `users/{xUserId}/sync/state` | Admin only | `sinceId`, `lastSyncAt`, fetch/write stats, `lastError`, … |
 | `config/public` | Read if member | `usage.*` (`postsReadCumulative`, `cyclePostsRead`, `pricePerPostUsd`, …), `lastRefreshedAt`, `invitesEnabled` (default `false`); legacy `defaultUid` / `defaultHandle` may exist from CLI oauth scripts |
 | `config/allowlist` | Admin only | `handles[]`, `xUserIds[]` |
@@ -131,7 +132,7 @@ Rules: [`firestore.rules`](../firestore.rules) — no world-readable posts.
 - Each card has **Like** (X API via `setLiked`) and **Share** (Web Share API, clipboard fallback). Liked state is mirrored under `users/{uid}/likes`.
 - Link preview cards (domain, title, description, thumbnail) when `linkPreview` is present.
 - Header: title, handle, relative refresh time, info, sign out on one line. Info dialog: status, usage (cumulative + this cycle), admin invite button (only if `invitesEnabled`; client creates invites with `maxUses: 5`, `days: 14`).
-- Hover an author in the feed for a profile card with Follow / Unfollow (`getAuthorCard`, `setFollowing`). The button **defaults to Following** until the API returns (feed authors are usually already followed). Hovering a following button shows Unfollow. Requires a fresh X sign-in after `follows.write` / `like.write` scopes were added.
+- Author profile card (hover on desktop, tap on touch): Follow / Unfollow (`getAuthorCard`, `setFollowing`) and **Favorite** toggle (Firestore `users/{uid}/favorites`). Feed cards show a star mark for posts from favorited accounts. Follow defaults to Following until the API returns. Requires a fresh X sign-in after `follows.write` / `like.write` scopes were added.
 
 ## Secrets (Cloud Functions)
 

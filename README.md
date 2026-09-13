@@ -13,12 +13,13 @@ I spent some time on this web app (self-hosted) so you can make your own X clien
 
 ## Features
 
-- Own chronological following feed (no algorithmic ranking, no ads)
+- Own chronological following feed (no algorithmic ranking)
 - Like / unlike and share from each card
 - Author hover card with Follow / Unfollow (defaults to Following until the API responds)
 - Link preview cards from X URL metadata (when the post has no attached media)
 - Inline video / GIF
-- Membership via handle allowlist; optional invite links (`invitesEnabled`, **default off**)
+
+<img width="612" height="1233" alt="image" src="https://github.com/user-attachments/assets/a1d1b255-6dc5-4cbd-8012-8e217ce2b9c1" />
 
 ## Stack
 

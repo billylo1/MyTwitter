@@ -6,7 +6,9 @@ import {
   signOut,
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
 import {
-  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   collection,
   query,
   orderBy,
@@ -14,6 +16,7 @@ import {
   onSnapshot,
   doc,
   getDoc,
+  getDocFromCache,
   setDoc,
   deleteDoc,
   serverTimestamp,
@@ -34,7 +37,11 @@ const START_X_AUTH = `${location.origin}/oauth/start`;
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app);
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager(),
+  }),
+});
 const functions = getFunctions(app, "us-central1");
 
 const authGateEl = document.getElementById("auth-gate");
@@ -58,7 +65,7 @@ const appVersionEl = document.getElementById("app-version");
 const ptrIndicatorEl = document.getElementById("ptr-indicator");
 
 /** Web SPA build label (bump when shipping Hosting). Native apps override via bridge. */
-const APP_VERSION = "0.1.3";
+const APP_VERSION = "0.1.5";
 
 let feedUnsub = null;
 let likesUnsub = null;
@@ -115,8 +122,35 @@ function formatRelative(date) {
   });
 }
 
+/** Decode common HTML entities (X / OG often store &amp; etc. already escaped). */
+function decodeHtmlEntities(value) {
+  let str = String(value ?? "");
+  if (!str.includes("&")) return str;
+  // Up to two passes so &amp;lt; → &lt; → <
+  for (let i = 0; i < 2; i++) {
+    const next = str
+      .replace(/&nbsp;/gi, "\u00a0")
+      .replace(/&quot;/gi, '"')
+      .replace(/&#0*39;|&apos;/gi, "'")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&#x([0-9a-f]+);/gi, (_, hex) => {
+        const cp = parseInt(hex, 16);
+        return cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : _;
+      })
+      .replace(/&#(\d+);/g, (_, dec) => {
+        const cp = Number(dec);
+        return cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : _;
+      })
+      .replace(/&amp;/gi, "&");
+    if (next === str) break;
+    str = next;
+  }
+  return str;
+}
+
 function escapeHtml(value) {
-  return String(value ?? "")
+  return decodeHtmlEntities(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -1000,10 +1034,6 @@ function subscribeFeed(uid) {
     feedUnsub();
     feedUnsub = null;
   }
-  for (const video of feedEl.querySelectorAll("video")) {
-    videoObserver.unobserve(video);
-  }
-  feedEl.innerHTML = "";
   feedEl.setAttribute("aria-busy", "true");
 
   const q = query(
@@ -1014,18 +1044,36 @@ function subscribeFeed(uid) {
 
   /** @type {Map<string, HTMLElement>} */
   const cards = new Map();
+  let feedPrimed = false;
 
-  function syncEmptyState(isEmpty) {
+  function primeFeedDom() {
+    if (feedPrimed) return;
+    feedPrimed = true;
+    for (const video of feedEl.querySelectorAll("video")) {
+      videoObserver.unobserve(video);
+    }
+    feedEl.innerHTML = "";
+    cards.clear();
+  }
+
+  function syncEmptyState(isEmpty, { offline = false } = {}) {
     if (isEmpty) {
       emptyEl.classList.remove("hidden");
-      statusEl.textContent = "Waiting for the first sync…";
+      statusEl.textContent = offline
+        ? "No cached posts · offline"
+        : "Waiting for the first sync…";
     } else {
       emptyEl.classList.add("hidden");
     }
   }
 
   function applyFeedSnapshot(snap) {
+    primeFeedDom();
     feedEl.setAttribute("aria-busy", "false");
+
+    const offline =
+      snap.metadata.fromCache ||
+      (typeof navigator !== "undefined" && navigator.onLine === false);
 
     if (snap.empty) {
       for (const el of cards.values()) {
@@ -1033,7 +1081,7 @@ function subscribeFeed(uid) {
         el.remove();
       }
       cards.clear();
-      syncEmptyState(true);
+      syncEmptyState(true, { offline });
       return;
     }
 
@@ -1076,13 +1124,19 @@ function subscribeFeed(uid) {
       previous = el;
     }
 
-    statusEl.textContent = `${snap.size} recent posts · live`;
+    statusEl.textContent = `${snap.size} recent posts · ${offline ? "offline" : "live"}`;
   }
 
   feedUnsub = onSnapshot(q, applyFeedSnapshot, (err) => {
     console.error(err);
-    statusEl.textContent = `Could not load feed: ${err.message}`;
     feedEl.setAttribute("aria-busy", "false");
+    const hasCards =
+      cards.size > 0 || Boolean(feedEl.querySelector(".card"));
+    if (hasCards) {
+      statusEl.textContent = `Offline · showing cached posts`;
+      return;
+    }
+    statusEl.textContent = `Could not load feed: ${err.message}`;
   });
 }
 
@@ -1271,20 +1325,109 @@ async function consumeAuthParams() {
   }
 }
 
+function isProbablyOffline() {
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
+function memberLocalKey(uid) {
+  return `mytwitter:member:${uid}`;
+}
+
+function saveMemberLocal(uid, data) {
+  try {
+    localStorage.setItem(
+      memberLocalKey(uid),
+      JSON.stringify({
+        id: uid,
+        handle: data.handle || "",
+        role: data.role || "member",
+        enabled: data.enabled !== false,
+        savedAt: Date.now(),
+      })
+    );
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function readMemberLocal(uid) {
+  try {
+    const raw = localStorage.getItem(memberLocalKey(uid));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.enabled === false) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function loadMemberSnapshot(uid) {
+  const ref = doc(db, "members", uid);
+  try {
+    return await getDoc(ref);
+  } catch (err) {
+    console.warn("[members] getDoc failed", err);
+    try {
+      return await getDocFromCache(ref);
+    } catch (cacheErr) {
+      console.warn("[members] getDocFromCache failed", cacheErr);
+      return null;
+    }
+  }
+}
+
+function startFeedSession(user, { status } = {}) {
+  subscribePublicConfig();
+  if (status) statusEl.textContent = status;
+  subscribeLikes(user.uid);
+  subscribeFavorites(user.uid);
+  subscribeFeed(user.uid);
+}
+
 async function enterApp(user) {
   authGateEl.classList.add("hidden");
   appShellEl.classList.remove("hidden");
   authErrorEl.classList.add("hidden");
 
-  const memberSnap = await getDoc(doc(db, "members", user.uid));
-  if (!memberSnap.exists() || memberSnap.data()?.enabled === false) {
-    await signOut(auth);
-    showAuthGate("You’re signed in to X but not a member of this feed yet.");
-    showAuthError("not_invited");
+  const memberSnap = await loadMemberSnapshot(user.uid);
+  let memberData = null;
+
+  if (memberSnap?.exists() && memberSnap.data()?.enabled !== false) {
+    memberData = { id: memberSnap.id, ...memberSnap.data() };
+    saveMemberLocal(user.uid, memberData);
+  } else if (memberSnap && (!memberSnap.exists() || memberSnap.data()?.enabled === false)) {
+    // Only treat as "not invited" when Firestore confirms from the server.
+    // fromCache / failed fetches are ambiguous (common offline WebView case).
+    const fromServer =
+      memberSnap.metadata && memberSnap.metadata.fromCache === false;
+    if (fromServer) {
+      try {
+        await signOut(auth);
+      } catch (err) {
+        console.warn("[members] signOut failed", err);
+      }
+      showAuthGate("You’re signed in to X but not a member of this feed yet.");
+      showAuthError("not_invited");
+      return;
+    }
+    memberData = readMemberLocal(user.uid);
+  } else {
+    memberData = readMemberLocal(user.uid);
+  }
+
+  if (!memberData) {
+    // Signed in but membership unknown (offline / cache miss) — show feed anyway.
+    currentMember = null;
+    whoamiEl.textContent = "Offline";
+    updateAdminPanel();
+    startFeedSession(user, {
+      status: "Offline — reconnect to verify membership",
+    });
     return;
   }
 
-  currentMember = { id: memberSnap.id, ...memberSnap.data() };
+  currentMember = memberData;
   whoamiEl.textContent = `@${currentMember.handle || user.uid}`;
   updateAdminPanel();
 
@@ -1295,11 +1438,10 @@ async function enterApp(user) {
     history.replaceState({}, "", next);
   }
 
-  subscribePublicConfig();
-  statusEl.textContent = "Connecting…";
-  subscribeLikes(user.uid);
-  subscribeFavorites(user.uid);
-  subscribeFeed(user.uid);
+  const offline = isProbablyOffline();
+  startFeedSession(user, {
+    status: offline ? "Offline · cached session" : "Connecting…",
+  });
   void ensureNativeDeviceRegistered();
   window.setTimeout(() => {
     void flushPendingTweet();
@@ -1339,6 +1481,10 @@ function wireUi() {
     });
     authorCardEl.addEventListener("mouseleave", () => {
       if (finePointer) scheduleAuthorHide();
+    });
+    authorCardEl.addEventListener("click", (event) => {
+      if (event.target.closest("button, a")) return;
+      hideAuthorCard();
     });
     document.addEventListener("click", (event) => {
       if (authorCardEl.classList.contains("hidden")) return;
@@ -1509,9 +1655,37 @@ async function boot() {
       await enterApp(user);
     } catch (err) {
       console.error(err);
-      showAuthGate("Could not load your membership. Try signing in again.");
+      // Keep a signed-in session in the app even if membership fetch throws
+      // (WebView often reports online while airplane mode blocks Firestore).
+      currentMember = readMemberLocal(user.uid);
+      authGateEl.classList.add("hidden");
+      appShellEl.classList.remove("hidden");
+      whoamiEl.textContent = currentMember?.handle
+        ? `@${currentMember.handle}`
+        : "Offline";
+      updateAdminPanel();
+      try {
+        startFeedSession(user, {
+          status: "Offline — reconnect to verify membership",
+        });
+      } catch (feedErr) {
+        console.error(feedErr);
+        // Last resort: stay on the shell with a status line, never the auth gate
+        // for an already-signed-in session.
+        authGateEl.classList.add("hidden");
+        appShellEl.classList.remove("hidden");
+        statusEl.textContent = "Offline — reconnect to load your feed";
+      }
     }
   });
 }
 
 boot();
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker
+    .register("/sw.js", { updateViaCache: "none" })
+    .catch((err) => {
+      console.warn("[sw] register failed", err);
+    });
+}

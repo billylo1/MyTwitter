@@ -40,13 +40,13 @@ flowchart LR
 
 | Piece | Role |
 |-------|------|
-| [`public/`](../public/) | Static SPA: Auth gate, own feed, likes/share, favorites, author card, info dialog; admin-only usage |
-| `android/` | Native WebView shell (Android): loads `SITE_URL`, Custom Tabs OAuth, status-link intents, FCM; optional Sentry via gitignored `sentry.dsn` / `SENTRY_DSN` |
+| [`public/`](../public/) | Static SPA: Auth gate, own feed, likes/share, favorites, author card, info dialog; admin-only usage. Firestore uses **persistent IndexedDB cache** so a reload offline can still show the last feed. A **service worker** (`sw.js`) caches the app shell + Firebase CDN modules so WebView cold starts can boot offline after one online visit |
+| `android/` | Native WebView shell (Android): loads `SITE_URL`, Custom Tabs OAuth, status-link intents, FCM; uses `LOAD_CACHE_ELSE_NETWORK` when offline; optional Sentry via gitignored `sentry.dsn` / `SENTRY_DSN` |
 | `ios/` | Native WKWebView shell (iOS): loads `SITE_URL`, SFSafariViewController OAuth (`client=ios`), FCM+APNs, `mytwitter://` deep links; optional Sentry via gitignored `Config.xcconfig` |
 | `public/firebase-config.js` | Local Firebase web config (`window.FIREBASE_CONFIG`; gitignored) |
 | Hosting rewrites | `/oauth/start` → `startXAuth`, `/oauth/callback` → `xOAuthCallback` |
 | Cloud Functions | See exports table below |
-| Firestore | Members, posts, tokens (Admin-only), sync state, allowlist |
+| Firestore | Members, posts, tokens (Admin-only), sync state, allowlist; web client enables `persistentLocalCache` for offline reads |
 | Firebase Auth | Custom tokens only; **Auth uid = X user id** |
 | X API | OAuth 2.0 user context + `GET /2/users/:id/timelines/reverse_chronological` (via `homeTimeline`) |
 

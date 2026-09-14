@@ -5,6 +5,8 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -12,6 +14,7 @@ import android.util.Log
 import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -40,6 +43,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private val siteUrl: String = BuildConfig.SITE_URL.trimEnd('/')
+    private var offlineCacheReloadAttempted = false
 
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* no-op */ }
@@ -72,9 +76,13 @@ class MainActivity : AppCompatActivity() {
             domStorageEnabled = true
             databaseEnabled = true
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-            // Avoid stale SPA assets hiding push-registration fixes during debug.
+            // Prefer cache when offline so cold start can still load the SPA shell.
             cacheMode =
-                if (BuildConfig.DEBUG) WebSettings.LOAD_NO_CACHE else WebSettings.LOAD_DEFAULT
+                if (isNetworkAvailable()) {
+                    WebSettings.LOAD_DEFAULT
+                } else {
+                    WebSettings.LOAD_CACHE_ELSE_NETWORK
+                }
             userAgentString = "$userAgentString MyTwitterAndroid/1.0"
         }
         webView.webChromeClient = object : WebChromeClient() {
@@ -105,6 +113,23 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 injectNativeBridge()
             }
+
+            override fun onReceivedError(
+                view: WebView,
+                request: WebResourceRequest,
+                error: WebResourceError,
+            ) {
+                if (!request.isForMainFrame) return
+                if (offlineCacheReloadAttempted) return
+                if (!isConnectivityError(error.errorCode)) return
+                offlineCacheReloadAttempted = true
+                Log.w(
+                    TAG,
+                    "main frame load failed (${error.errorCode}); retrying with cache",
+                )
+                view.settings.cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
+                view.reload()
+            }
         }
 
         onBackPressedDispatcher.addCallback(
@@ -120,6 +145,21 @@ class MainActivity : AppCompatActivity() {
             webView.loadUrl(siteUrl)
         }
         handleTweetExtra(intent)
+    }
+
+    private fun isNetworkAvailable(): Boolean {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return true
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    private fun isConnectivityError(errorCode: Int): Boolean {
+        return errorCode == WebViewClient.ERROR_HOST_LOOKUP ||
+            errorCode == WebViewClient.ERROR_CONNECT ||
+            errorCode == WebViewClient.ERROR_TIMEOUT ||
+            errorCode == WebViewClient.ERROR_IO ||
+            errorCode == WebViewClient.ERROR_UNKNOWN
     }
 
     override fun onNewIntent(intent: Intent) {

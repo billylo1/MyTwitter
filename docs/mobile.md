@@ -2,6 +2,8 @@
 
 Thin `WebView` shell that loads your Firebase Hosting SPA (`SITE_URL`).
 
+**Offline cold start:** Open the app online once so the SPA service worker and Firestore cache can populate. After that, airplane mode + process kill can still show the last feed (media from X CDN may fail). Debug builds no longer force `LOAD_NO_CACHE`.
+
 ## Requirements
 
 - Android Studio Ladybug+ (or SDK 35 + JDK 17)
@@ -87,6 +89,8 @@ Prebuilt assets live in `android/play-store/`:
 # iOS native client
 
 Thin `WKWebView` shell (UIKit) that loads the same Hosting SPA. Bundle ID: `org.evergreenlabs.mytwitter`.
+
+**Offline cold start:** Same as Android — one prior online visit registers the Hosting service worker (iOS 16.4+) and fills Firestore’s persistent cache.
 
 ## Requirements
 

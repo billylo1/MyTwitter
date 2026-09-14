@@ -88,8 +88,25 @@
       </main>
     </div>
 
+    <script>
+      // Drop stale MyTwitter shell caches before the module boots (online only).
+      if ("serviceWorker" in navigator && navigator.onLine !== false) {
+        caches.keys().then((keys) => {
+          const stale = keys.filter(
+            (k) => k.startsWith("mytwitter-shell-") && k !== "mytwitter-shell-v4"
+          );
+          if (!stale.length) return;
+          Promise.all(stale.map((k) => caches.delete(k))).then(() =>
+            navigator.serviceWorker
+              .getRegistrations()
+              .then((regs) => Promise.all(regs.map((r) => r.unregister())))
+              .then(() => location.reload())
+          );
+        });
+      }
+    </script>
     <script src="/firebase-config.js"></script>
-    <script type="module" src="/app.js"></script>
+    <script type="module" src="/app.js?v=0.1.5"></script>
     <div id="author-card" class="author-card hidden" role="dialog" aria-label="Account" aria-modal="true">
       <div class="author-card-top">
         <img id="author-card-avatar" class="author-card-avatar" alt="" width="64" height="64" referrerpolicy="no-referrer" />

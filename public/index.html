@@ -59,7 +59,9 @@
         </p>
         <p id="status" class="info-line status" aria-live="polite">Loading…</p>
         <p id="app-version" class="info-line muted" aria-live="polite"></p>
-        <p class="info-line muted">Updated from X about every 10 minutes.</p>
+        <p class="info-line muted">
+          Updated from X about every 10 minutes, or pull down to sync now.
+        </p>
         <div id="admin-panel" class="admin-panel hidden">
           <hr class="info-hr" />
           <p class="info-line"><strong>Admin</strong></p>
@@ -72,9 +74,16 @@
       </dialog>
 
       <main class="inner">
+        <div
+          id="ptr-indicator"
+          class="ptr-indicator"
+          aria-live="polite"
+          hidden
+        ></div>
         <div id="feed" class="feed" role="feed" aria-busy="true"></div>
         <p id="empty" class="empty hidden">
           No posts yet. Sync runs about every 10 minutes after you connect.
+          Pull down to sync now.
         </p>
       </main>
     </div>

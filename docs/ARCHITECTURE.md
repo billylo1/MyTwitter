@@ -63,6 +63,7 @@ flowchart LR
 | `resolveTweetUrl` | Callable | Expand `t.co` / parse status URLs → tweet id |
 | `getTweet` | Callable | Fetch a tweet via X API + write-through to own posts |
 | `registerDevice` | Callable | Store FCM device token under `users/{uid}/devices` |
+| `syncMyTimeline` | Callable | Authenticated pull-to-refresh: sync only the signed-in user (60s cooldown) |
 | `syncTimeline` | Scheduler (`every 10 minutes`) | Poll all enabled users; push when favorited authors post |
 | `syncNow` | HTTP `?key=` | Manual sync |
 
@@ -108,7 +109,7 @@ Hosting also sets `Referrer-Policy: no-referrer`. Firestore database location is
 | `users/{xUserId}/likes/{tweetId}` | Read **own** likes | Mirror of likes made from the site (`likedAt`) |
 | `users/{xUserId}/favorites/{authorId}` | Read/write **own** | Curated watchlist (`handle`, `name`, `avatar`, `favoritedAt`); MyTwitter-only, not X bookmarks |
 | `users/{xUserId}/devices/{tokenId}` | Admin only | FCM tokens (`token`, `platform`, `enabled`, `updatedAt`) |
-| `users/{xUserId}/sync/state` | Admin only | `sinceId`, `lastSyncAt`, fetch/write stats, `lastError`, … |
+| `users/{xUserId}/sync/state` | Admin only | `sinceId`, `lastSyncAt`, `lastManualSyncAt`, fetch/write stats, `lastError`, … |
 | `config/public` | Read if member | `usage.*` (`postsReadCumulative`, `cyclePostsRead`, `pricePerPostUsd`, …), `lastRefreshedAt`, `invitesEnabled` (default `false`); legacy `defaultUid` / `defaultHandle` may exist from CLI oauth scripts |
 | `config/allowlist` | Admin only | `handles[]`, `xUserIds[]` |
 | `invites/{code}` | Admin only | `createdBy`, `maxUses`, `usedCount`, `expiresAt`, `active`, `createdAt`, redemption metadata |
@@ -121,6 +122,7 @@ Rules: [`firestore.rules`](../firestore.rules) — no world-readable posts.
 ## Sync
 
 - **Post-OAuth:** `xOAuthCallback` kicks off an immediate background sync for the new/returning user.
+- **`syncMyTimeline`**: Callable for the signed-in member only (SPA pull-to-refresh); 60s cooldown via `lastManualSyncAt`.
 - **`syncTimeline`**: Cloud Scheduler every 10 minutes; all `users` with `enabled == true`.
 - **`syncNow`**: HTTP, requires `?key=$SYNC_NOW_KEY`.
 - Prefers X API v2 `homeTimeline` with `exclude=replies`, `since_id` after first sync (first sync: last 24h via `start_time`). Pagination caps: up to **5** pages when incremental, **2** on first sync.
@@ -139,7 +141,7 @@ Rules: [`firestore.rules`](../firestore.rules) — no world-readable posts.
 - Video posts play inline (`<video controls>`); animated GIFs autoplay muted and loop; viewport `IntersectionObserver` pauses off-screen videos. Card tap still opens X except on video controls / links / link previews.
 - Each card has **Like** (X API via `setLiked`) and **Share** (Web Share API, clipboard fallback). Liked state is mirrored under `users/{uid}/likes`.
 - Link preview cards (domain, title, description, thumbnail) when `linkPreview` is present.
-- Header: title, handle, relative refresh time, info, sign out on one line. Info dialog: status, app version, admin-only usage (cumulative + this cycle), invite button (only if `invitesEnabled`; client creates invites with `maxUses: 5`, `days: 14`).
+- Header: title, handle, relative refresh time, info, sign out on one line. Pull-to-refresh on the feed calls `syncMyTimeline`. Info dialog: status, app version, admin-only usage (cumulative + this cycle), invite button (only if `invitesEnabled`; client creates invites with `maxUses: 5`, `days: 14`).
 - Author profile card (hover on desktop, tap on touch): Follow / Unfollow (`getAuthorCard`, `setFollowing`) and **Favorite** toggle (Firestore `users/{uid}/favorites`). Feed cards show a star mark for posts from favorited accounts. Follow defaults to Following until the API returns. Requires a fresh X sign-in after `follows.write` / `like.write` scopes were added.
 - Deep links: `?tweet=` and `window.MyTwitterOpenTweet` open/highlight a post (or fetch via `getTweet`). Native Android/iOS shells register for push and open tweets from notifications / deep links.
 

@@ -286,6 +286,43 @@ body {
   padding-bottom: 2.5rem;
 }
 
+.ptr-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 0;
+  margin: 0 auto 0.5rem;
+  width: min(100%, var(--max));
+  color: var(--muted);
+  font-size: 0.85rem;
+  overflow: hidden;
+  transition: min-height 0.15s ease, opacity 0.15s ease;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ptr-indicator.is-visible {
+  opacity: 1;
+  min-height: 2rem;
+}
+
+.ptr-indicator.is-syncing::before {
+  content: "";
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: ptr-spin 0.7s linear infinite;
+}
+
+@keyframes ptr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .card {
   position: relative;
   background: var(--surface);

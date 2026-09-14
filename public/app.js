@@ -55,9 +55,10 @@ const statusEl = document.getElementById("status");
 const refreshedEl = document.getElementById("refreshed");
 const usageEl = document.getElementById("usage");
 const appVersionEl = document.getElementById("app-version");
+const ptrIndicatorEl = document.getElementById("ptr-indicator");
 
 /** Web SPA build label (bump when shipping Hosting). Native apps override via bridge. */
-const APP_VERSION = "0.1.2";
+const APP_VERSION = "0.1.3";
 
 let feedUnsub = null;
 let likesUnsub = null;
@@ -127,7 +128,7 @@ function linkify(text) {
   return escaped.replace(
     /(https?:\/\/[^\s<]+)/g,
     (url) =>
-      `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`
+      `<a href="${url}">${url}</a>`
   );
 }
 
@@ -298,7 +299,7 @@ function renderLinkPreview(preview) {
           <path fill="currentColor" d="M6 4h9l3 3v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm8 1v3h3M8 11h8v1.5H8V11zm0 3.5h8V16H8v-1.5zm0 3.5h5V19.5H8V18z"/>
         </svg>
       </div>`;
-  return `<a class="link-preview" href="${escapeHtml(preview.url)}" target="_blank" rel="noopener noreferrer">
+  return `<a class="link-preview" href="${escapeHtml(preview.url)}">
     <div class="link-preview-media">${thumb}</div>
     <div class="link-preview-body">
       ${domain ? `<p class="link-preview-domain">${escapeHtml(domain)}</p>` : ""}
@@ -358,7 +359,7 @@ function renderPost(id, data) {
     : "";
   return `<article class="card${isFavoritedAuthor ? " is-favorited-author" : ""}" data-id="${escapeHtml(id)}" data-url="${escapeHtml(url)}" data-author-id="${escapeHtml(data.authorId || "")}" data-reposted-by-id="${escapeHtml(data.repostedById || "")}">
     ${favMark}
-    <a class="card-hit" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" aria-label="View on X"></a>
+    <a class="card-hit" href="${escapeHtml(url)}" aria-label="View on X"></a>
     <div class="card-actions">
       <button
         type="button"
@@ -389,7 +390,7 @@ function renderPost(id, data) {
         <div>
           <p class="author-name">${escapeHtml(data.authorName || handle)}</p>
           <p class="author-meta">
-            <a class="author-handle" href="https://x.com/${escapeHtml(handle)}" target="_blank" rel="noopener noreferrer">@${escapeHtml(handle)}</a>
+            <a class="author-handle" href="https://x.com/${escapeHtml(handle)}">@${escapeHtml(handle)}</a>
             · <time datetime="${created ? created.toISOString() : ""}">${escapeHtml(formatRelative(created))}</time>
           </p>
         </div>
@@ -974,7 +975,7 @@ async function sharePost(card, btn) {
       flashActionLabel(btn, "Link copied");
       return;
     }
-    window.open(url, "_blank", "noopener,noreferrer");
+    location.assign(url);
   } catch (err) {
     if (err?.name === "AbortError") return;
     console.error(err);
@@ -1083,6 +1084,120 @@ function subscribeFeed(uid) {
     statusEl.textContent = `Could not load feed: ${err.message}`;
     feedEl.setAttribute("aria-busy", "false");
   });
+}
+
+const PTR_THRESHOLD_PX = 70;
+let ptrSyncing = false;
+let ptrPullPx = 0;
+let ptrStartY = 0;
+let ptrTracking = false;
+
+function setPtrIndicator(text, { visible = true, syncing = false } = {}) {
+  if (!ptrIndicatorEl) return;
+  if (!visible || !text) {
+    ptrIndicatorEl.hidden = true;
+    ptrIndicatorEl.textContent = "";
+    ptrIndicatorEl.classList.remove("is-visible", "is-syncing");
+    return;
+  }
+  ptrIndicatorEl.hidden = false;
+  ptrIndicatorEl.textContent = text;
+  ptrIndicatorEl.classList.toggle("is-visible", true);
+  ptrIndicatorEl.classList.toggle("is-syncing", syncing);
+}
+
+async function runManualSync() {
+  if (ptrSyncing) return;
+  if (!auth.currentUser) return;
+  if (!appShellEl || appShellEl.classList.contains("hidden")) return;
+
+  ptrSyncing = true;
+  setPtrIndicator("Syncing…", { syncing: true });
+  statusEl.textContent = "Syncing with X…";
+  try {
+    const syncMyTimeline = httpsCallable(functions, "syncMyTimeline");
+    const { data } = await syncMyTimeline({});
+    const written = Number(data?.written ?? 0);
+    const msg =
+      written > 0
+        ? `Synced · ${written} new`
+        : "Synced · up to date";
+    statusEl.textContent = msg;
+    setPtrIndicator(msg, { syncing: false });
+    window.setTimeout(() => setPtrIndicator("", { visible: false }), 1200);
+  } catch (err) {
+    console.warn("[sync]", err);
+    const code = err?.code || "";
+    const message = String(err?.message || err || "Sync failed").replace(
+      /^Firebase:\s*/i,
+      ""
+    );
+    const friendly =
+      code.includes("resource-exhausted") || /Wait \d+s/i.test(message)
+        ? message
+        : `Sync failed: ${message}`;
+    statusEl.textContent = friendly;
+    setPtrIndicator(friendly, { syncing: false });
+    window.setTimeout(() => setPtrIndicator("", { visible: false }), 2000);
+  } finally {
+    ptrSyncing = false;
+    ptrPullPx = 0;
+  }
+}
+
+function wirePullToRefresh() {
+  if (!ptrIndicatorEl) return;
+
+  const onTouchStart = (event) => {
+    if (ptrSyncing) return;
+    if (!appShellEl || appShellEl.classList.contains("hidden")) return;
+    if (window.scrollY > 2) return;
+    const t = event.touches?.[0];
+    if (!t) return;
+    ptrTracking = true;
+    ptrStartY = t.clientY;
+    ptrPullPx = 0;
+  };
+
+  const onTouchMove = (event) => {
+    if (!ptrTracking || ptrSyncing) return;
+    if (window.scrollY > 2) {
+      ptrTracking = false;
+      setPtrIndicator("", { visible: false });
+      return;
+    }
+    const t = event.touches?.[0];
+    if (!t) return;
+    const dy = t.clientY - ptrStartY;
+    if (dy <= 0) {
+      ptrPullPx = 0;
+      setPtrIndicator("", { visible: false });
+      return;
+    }
+    ptrPullPx = Math.min(dy, 140);
+    if (ptrPullPx >= PTR_THRESHOLD_PX) {
+      setPtrIndicator("Release to sync");
+    } else if (ptrPullPx > 12) {
+      setPtrIndicator("Pull to refresh");
+    }
+  };
+
+  const onTouchEnd = () => {
+    if (!ptrTracking) return;
+    ptrTracking = false;
+    const shouldSync = ptrPullPx >= PTR_THRESHOLD_PX && !ptrSyncing;
+    ptrPullPx = 0;
+    if (shouldSync) {
+      void runManualSync();
+    } else {
+      setPtrIndicator("", { visible: false });
+    }
+  };
+
+  window.addEventListener("touchstart", onTouchStart, { passive: true });
+  window.addEventListener("touchmove", onTouchMove, { passive: true });
+  window.addEventListener("touchend", onTouchEnd);
+  window.addEventListener("touchcancel", onTouchEnd);
 }
 
 function inviteFromUrl() {
@@ -1194,6 +1309,7 @@ async function enterApp(user) {
 function wireUi() {
   renderAppVersion();
   window.addEventListener("mytwitter:nativeReady", () => renderAppVersion());
+  wirePullToRefresh();
 
   const dialog = document.getElementById("info-dialog");
   const openBtn = document.getElementById("info-open");
@@ -1317,7 +1433,7 @@ function wireUi() {
     const url = card?.dataset?.url;
     if (!url) return;
     event.preventDefault();
-    window.open(url, "_blank", "noopener,noreferrer");
+    location.assign(url);
   });
 
   feedEl.addEventListener(

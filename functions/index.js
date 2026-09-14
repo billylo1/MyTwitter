@@ -1664,6 +1664,70 @@ exports.registerDevice = onCall(
   }
 );
 
+const MANUAL_SYNC_COOLDOWN_MS = 60_000;
+
+exports.syncMyTimeline = onCall(secretOpts, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+  const uid = request.auth.uid;
+  const memberSnap = await db.collection("members").doc(uid).get();
+  if (!memberSnap.exists || memberSnap.data()?.enabled === false) {
+    throw new HttpsError("permission-denied", "Not a member");
+  }
+
+  const userRef = db.collection("users").doc(uid);
+  const userDoc = await userRef.get();
+  if (!userDoc.exists || userDoc.data()?.enabled === false) {
+    throw new HttpsError("failed-precondition", "User sync not enabled");
+  }
+
+  const syncRef = userRef.collection("sync").doc("state");
+  const syncSnap = await syncRef.get();
+  const lastManual = syncSnap.exists ? syncSnap.data()?.lastManualSyncAt : null;
+  const lastMs =
+    lastManual && typeof lastManual.toMillis === "function"
+      ? lastManual.toMillis()
+      : 0;
+  if (lastMs && Date.now() - lastMs < MANUAL_SYNC_COOLDOWN_MS) {
+    const waitSec = Math.ceil(
+      (MANUAL_SYNC_COOLDOWN_MS - (Date.now() - lastMs)) / 1000
+    );
+    throw new HttpsError(
+      "resource-exhausted",
+      `Wait ${waitSec}s before syncing again`
+    );
+  }
+
+  try {
+    const stats = await syncUser(userDoc, secretsFromEnv());
+    await syncRef.set(
+      { lastManualSyncAt: FieldValue.serverTimestamp() },
+      { merge: true }
+    );
+    await db.collection("config").doc("public").set(
+      { lastRefreshedAt: FieldValue.serverTimestamp() },
+      { merge: true }
+    );
+    logger.info("syncMyTimeline done", { uid, ...stats });
+    return {
+      ok: true,
+      fetched: stats.fetched ?? 0,
+      written: stats.written ?? 0,
+      newestId: stats.newestId || null,
+    };
+  } catch (err) {
+    if (err instanceof HttpsError) throw err;
+    const detail =
+      err.data?.detail ||
+      err.data?.errors?.[0]?.message ||
+      err.message ||
+      String(err);
+    logger.error("syncMyTimeline failed", { uid, error: detail });
+    throw new HttpsError("internal", String(detail));
+  }
+});
+
 exports.syncTimeline = onSchedule(
   {
     schedule: "every 10 minutes",

@@ -43,10 +43,11 @@ cd android
 | Sign in with X | Custom Tabs → `/oauth/start?client=android` → `mytwitter://auth?token=…` → WebView |
 | Status / t.co links | Intent filters; SPA `resolveTweetUrl` / `getTweet` / `?tweet=` |
 | Push | FCM when favorited accounts post (incremental sync); tap opens tweet |
+| Pull to refresh | SPA gesture calls `syncMyTimeline` (per-user sync; feed updates via Firestore) |
 | Native bridge | `window.MyTwitterNative` (`platform`, `requestPushRegistration`) |
 | Portrait notch | Root padding for status bar + display cutout |
 
-Deploy Hosting + Functions (`startXAuth`, `xOAuthCallback`, `resolveTweetUrl`, `getTweet`, `registerDevice`, `syncTimeline`) and Firestore rules for favorites/devices.
+Deploy Hosting + Functions (`startXAuth`, `xOAuthCallback`, `resolveTweetUrl`, `getTweet`, `registerDevice`, `syncMyTimeline`, `syncTimeline`) and Firestore rules for favorites/devices.
 
 ## Play release (AAB)
 
@@ -127,6 +128,7 @@ xcodebuild -project MyTwitter.xcodeproj -scheme MyTwitter \
 | Status / t.co (in-app) | Navigation policy + `TweetUrlParser` / SPA `MyTwitterOpenTweet` |
 | Custom schemes | `mytwitter://auth`, `mytwitter://tweet`, `mytwitter://url` |
 | Push | FCM + APNs; tap opens tweet via `data.tweetId` |
+| Pull to refresh | Same SPA gesture → `syncMyTimeline` |
 | Native bridge | `window.MyTwitterNative` (`platform: ios`, `requestPushRegistration`, version fields) |
 | Safe area | WKWebView pinned to `safeAreaLayoutGuide` |
 

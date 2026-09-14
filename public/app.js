@@ -821,18 +821,50 @@ window.addEventListener("mytwitter:openTweet", (event) => {
 
 async function registerNativeDeviceIfPresent() {
   const native = window.MyTwitterNative;
-  if (!native || typeof native.requestPushRegistration !== "function") return;
+  if (!native || typeof native.requestPushRegistration !== "function") {
+    console.info("[push] native bridge not ready");
+    return false;
+  }
+  if (!auth.currentUser) {
+    console.info("[push] skip register; signed out");
+    return false;
+  }
   try {
     const payload = await native.requestPushRegistration();
     const token = payload?.token || payload;
     const platform = payload?.platform || native.platform || "android";
-    if (!token || typeof token !== "string") return;
+    if (!token || typeof token !== "string") {
+      console.warn("[push] no FCM token from native", payload);
+      return false;
+    }
     const registerDevice = httpsCallable(functions, "registerDevice");
     await registerDevice({ token, platform });
+    console.info("[push] device registered", platform, token.slice(0, 12) + "…");
+    return true;
   } catch (err) {
-    console.warn("Push registration skipped", err);
+    console.warn("[push] registration failed", err);
+    return false;
   }
 }
+
+async function ensureNativeDeviceRegistered({ attempts = 8, delayMs = 750 } = {}) {
+  for (let i = 0; i < attempts; i++) {
+    const ok = await registerNativeDeviceIfPresent();
+    if (ok) return true;
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return false;
+}
+
+window.addEventListener("mytwitter:nativeReady", () => {
+  if (auth.currentUser) void ensureNativeDeviceRegistered({ attempts: 4, delayMs: 500 });
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && auth.currentUser) {
+    void registerNativeDeviceIfPresent();
+  }
+});
 
 async function toggleLike(card, btn) {
   const tweetId = card.dataset.id;
@@ -1119,7 +1151,7 @@ async function enterApp(user) {
   subscribeLikes(user.uid);
   subscribeFavorites(user.uid);
   subscribeFeed(user.uid);
-  await registerNativeDeviceIfPresent();
+  void ensureNativeDeviceRegistered();
   window.setTimeout(() => {
     void flushPendingTweet();
   }, 500);

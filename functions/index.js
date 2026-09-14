@@ -732,7 +732,10 @@ async function notifyFavoritePost(uid, tweetId, mapped) {
     if (data.enabled === false) continue;
     if (data.token) tokens.push(String(data.token));
   }
-  if (!tokens.length) return;
+  if (!tokens.length) {
+    logger.info("favorite push skipped; no devices", { uid, tweetId });
+    return;
+  }
 
   const handle =
     mapped.repostedByHandle || mapped.authorHandle || "someone";
@@ -742,6 +745,13 @@ async function notifyFavoritePost(uid, tweetId, mapped) {
     .trim()
     .slice(0, 140);
 
+  logger.info("favorite push send", {
+    uid,
+    tweetId,
+    handle,
+    tokenCount: tokens.length,
+  });
+
   const res = await messaging.sendEachForMulticast({
     tokens,
     notification: { title, body: body || "New post from a favorited account" },
@@ -749,14 +759,25 @@ async function notifyFavoritePost(uid, tweetId, mapped) {
       tweetId: String(tweetId),
       url: mapped.url ? String(mapped.url) : "",
     },
-    android: { priority: "high" },
+    android: {
+      priority: "high",
+      notification: {
+        channelId: "favorites",
+        priority: "high",
+      },
+    },
   });
   if (res.failureCount) {
     logger.warn("FCM partial failures", {
       uid,
       failureCount: res.failureCount,
       successCount: res.successCount,
+      errors: res.responses
+        .filter((r) => !r.success)
+        .map((r) => r.error?.message || String(r.error)),
     });
+  } else {
+    logger.info("favorite push ok", { uid, tweetId, successCount: res.successCount });
   }
 }
 

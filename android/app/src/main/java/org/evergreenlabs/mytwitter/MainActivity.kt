@@ -58,16 +58,28 @@ class MainActivity : AppCompatActivity() {
         ViewCompat.requestApplyInsets(root)
 
         maybeRequestNotificationPermission()
+        ensureFavoritesChannel()
 
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
             databaseEnabled = true
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-            cacheMode = WebSettings.LOAD_DEFAULT
+            // Avoid stale SPA assets hiding push-registration fixes during debug.
+            cacheMode =
+                if (BuildConfig.DEBUG) WebSettings.LOAD_NO_CACHE else WebSettings.LOAD_DEFAULT
             userAgentString = "$userAgentString MyTwitterAndroid/1.0"
         }
-        webView.webChromeClient = WebChromeClient()
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
+                val msg = consoleMessage ?: return super.onConsoleMessage(consoleMessage)
+                Log.i(
+                    TAG,
+                    "console[${msg.messageLevel()}] ${msg.sourceId()}:${msg.lineNumber()} ${msg.message()}",
+                )
+                return true
+            }
+        }
         webView.addJavascriptInterface(NativeBridge(), "MyTwitterNativeBridge")
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(
@@ -129,14 +141,29 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun ensureFavoritesChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
+        val channel = android.app.NotificationChannel(
+            MyFirebaseMessagingService.CHANNEL_ID,
+            "Favorites",
+            android.app.NotificationManager.IMPORTANCE_HIGH,
+        ).apply {
+            description = "Posts from accounts you favorited"
+        }
+        nm.createNotificationChannel(channel)
+    }
+
     private fun fetchFcmToken(onResult: (String?) -> Unit) {
         lifecycleScope.launch {
             try {
                 maybeRequestNotificationPermission()
+                ensureFavoritesChannel()
                 val token = FirebaseMessaging.getInstance().token.await()
+                Log.i(TAG, "FCM token ready len=${token.length}")
                 onResult(token)
             } catch (e: Exception) {
-                Log.w(TAG, "FCM token failed", e)
+                Log.e(TAG, "FCM token failed", e)
                 onResult(null)
             }
         }

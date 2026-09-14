@@ -46,3 +46,37 @@ cd android
 | Portrait notch | Root padding for status bar + display cutout |
 
 Deploy Hosting + Functions (`startXAuth`, `xOAuthCallback`, `resolveTweetUrl`, `getTweet`, `registerDevice`, `syncTimeline`) and Firestore rules for favorites/devices.
+
+## Play release (AAB)
+
+1. Create `android/keystore.properties` (gitignored), e.g. from `~/.sidekick-secrets/mytwitter-android-env.sh`:
+
+```properties
+storeFile=/absolute/path/to/mytwitter-upload.jks
+storePassword=…
+keyAlias=mytwitter
+keyPassword=…
+```
+
+2. Ensure `android/local.properties` has production `site.url`.
+
+3. Build the Play App Bundle:
+
+```bash
+cd android
+./gradlew :app:bundleRelease
+```
+
+Output: `android/app/build/outputs/bundle/release/app-release.aab`
+
+Upload that AAB to Play Console → Testing → closed/open testing (or Internal testing). First upload requires creating the Play app for `org.evergreenlabs.mytwitter` and enrolling in Play App Signing.
+
+## Store listing graphics
+
+Prebuilt assets live in `android/play-store/`:
+
+- App icon: `icon/icon-512.png` (512×512)
+- Feature graphic: `feature-graphic/feature-graphic-1024x500.png` (1024×500)
+- Phone screenshots: `screenshots/phone/*.png`
+- Tablet screenshots: `screenshots/tablet/*.png` (Medium_Tablet AVD, landscape + portrait)
+

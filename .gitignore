@@ -20,6 +20,7 @@ credentials.json
 .firebaserc
 public/firebase-config.js
 android/local.properties
+android/keystore.properties
 android/.gradle/
 android/**/build/
 android/captures/
@@ -30,4 +31,6 @@ android/app/release/
 *.aab
 *.ap_
 *.dex
+*.jks
+*.keystore
 

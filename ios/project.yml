@@ -88,3 +88,7 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+        # Required for Service Workers + message handlers in WKWebView (iOS 16.4+).
+        WKAppBoundDomains:
+          - mytwitter-feed.web.app
+          - mytwitter-feed.firebaseapp.com

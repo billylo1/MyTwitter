@@ -65,7 +65,7 @@ const appVersionEl = document.getElementById("app-version");
 const ptrIndicatorEl = document.getElementById("ptr-indicator");
 
 /** Web SPA build label (bump when shipping Hosting). Native apps override via bridge. */
-const APP_VERSION = "0.1.5";
+const APP_VERSION = "0.1.6";
 
 let feedUnsub = null;
 let likesUnsub = null;

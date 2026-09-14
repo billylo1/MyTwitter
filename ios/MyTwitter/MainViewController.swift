@@ -29,6 +29,8 @@ final class MainViewController: UIViewController {
         config.userContentController = userContent
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         config.websiteDataStore = .default()
+        // Opt into App-Bound Domains so Service Workers (and our JS bridge) work in WKWebView.
+        config.limitsNavigationsToAppBoundDomains = true
         // Without this, <video playsinline> still opens the system fullscreen player.
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
@@ -58,11 +60,75 @@ final class MainViewController: UIViewController {
             self?.openTweetById(tweetId)
         }
 
-        if let url = URL(string: siteURL) {
-            log.info("Loading SITE_URL=\(self.siteURL, privacy: .public)")
-            webView.load(URLRequest(url: url))
-        } else {
+        loadSite()
+    }
+
+    /// Bump when Hosting ships shell/JS fixes that must not stay stuck in WK HTTP cache.
+    private static let shellCacheEpoch = "0.1.6"
+
+    private func loadSite() {
+        guard let url = URL(string: siteURL) else {
             log.error("Invalid SITE_URL=\(self.siteURL, privacy: .public)")
+            return
+        }
+        log.info("Loading SITE_URL=\(self.siteURL, privacy: .public)")
+
+        let defaults = UserDefaults.standard
+        let key = "shellCacheEpoch"
+        let needsFreshShell = defaults.string(forKey: key) != Self.shellCacheEpoch
+
+        #if DEBUG
+        // Automation/testing: `defaults write … pendingAuthToken <jwt>` then launch.
+        if let pending = defaults.string(forKey: "pendingAuthToken"), !pending.isEmpty {
+            defaults.removeObject(forKey: "pendingAuthToken")
+            var comps = URLComponents(string: siteURL)
+            comps?.queryItems = [URLQueryItem(name: "token", value: pending)]
+            if let target = comps?.url {
+                log.info("DEBUG pendingAuthToken → WebView")
+                var request = URLRequest(url: target)
+                request.cachePolicy = needsFreshShell
+                    ? .reloadIgnoringLocalCacheData
+                    : .returnCacheDataElseLoad
+                finishLoad(request: request, needsFreshShell: needsFreshShell, epochKey: key)
+                return
+            }
+        }
+        #endif
+
+        var request = URLRequest(url: url)
+        if needsFreshShell {
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+        } else {
+            request.cachePolicy = .returnCacheDataElseLoad
+        }
+        finishLoad(request: request, needsFreshShell: needsFreshShell, epochKey: key)
+    }
+
+    private func finishLoad(request: URLRequest, needsFreshShell: Bool, epochKey: String) {
+        let defaults = UserDefaults.standard
+        if needsFreshShell {
+            let store = WKWebsiteDataStore.default()
+            let types: Set<String> = [
+                WKWebsiteDataTypeDiskCache,
+                WKWebsiteDataTypeMemoryCache,
+            ]
+            let host = request.url?.host?.lowercased() ?? ""
+            store.fetchDataRecords(ofTypes: types) { [weak self] records in
+                let mine = records.filter { record in
+                    record.displayName.lowercased().contains(host)
+                        || record.displayName.lowercased().contains("mytwitter-feed")
+                }
+                store.removeData(ofTypes: types, for: mine) {
+                    DispatchQueue.main.async {
+                        guard let self else { return }
+                        self.log.info("Cleared WK cache for shell epoch \(Self.shellCacheEpoch, privacy: .public)")
+                        self.webView.load(request)
+                        defaults.set(Self.shellCacheEpoch, forKey: epochKey)
+                    }
+                }
+            }
+        } else {
+            webView.load(request)
         }
     }
 
@@ -110,7 +176,9 @@ final class MainViewController: UIViewController {
         comps?.queryItems = items.isEmpty ? nil : items
         guard let target = comps?.url else { return }
         log.info("OAuth return → WebView")
-        webView.load(URLRequest(url: target))
+        var request = URLRequest(url: target)
+        request.cachePolicy = .returnCacheDataElseLoad
+        webView.load(request)
     }
 
     // MARK: - Navigation policy helpers

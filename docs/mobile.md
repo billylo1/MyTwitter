@@ -90,7 +90,7 @@ Prebuilt assets live in `android/play-store/`:
 
 Thin `WKWebView` shell (UIKit) that loads the same Hosting SPA. Bundle ID: `org.evergreenlabs.mytwitter`.
 
-**Offline cold start:** Same as Android — one prior online visit registers the Hosting service worker (iOS 16.4+) and fills Firestore’s persistent cache.
+**Offline cold start:** Same as Android — one prior online visit registers the Hosting service worker (iOS 16.4+) and fills Firestore’s persistent cache. The iOS shell enables **App-Bound Domains** (`WKAppBoundDomains` + `limitsNavigationsToAppBoundDomains`) so Service Workers work in WKWebView; keep your Hosting hosts listed there when forking.
 
 ## Requirements
 

@@ -19,3 +19,15 @@ credentials.json
 *.key
 .firebaserc
 public/firebase-config.js
+android/local.properties
+android/.gradle/
+android/**/build/
+android/captures/
+android/.idea/
+android/*.iml
+android/app/release/
+*.apk
+*.aab
+*.ap_
+*.dex
+

@@ -9,12 +9,14 @@ const { defineSecret, defineString } = require("firebase-functions/params");
 const { initializeApp, cert, getApps } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
+const { getMessaging } = require("firebase-admin/messaging");
 const { TwitterApi } = require("twitter-api-v2");
 const logger = require("firebase-functions/logger");
 
 initializeApp();
 const db = getFirestore();
 const auth = getAuth();
+const messaging = getMessaging();
 
 const xClientId = defineSecret("X_CLIENT_ID");
 const xClientSecret = defineSecret("X_CLIENT_SECRET");
@@ -572,6 +574,10 @@ async function syncViaV2(client, userDoc, sinceId) {
   const postsCol = userDoc.ref.collection("posts");
   const authorsCol = userDoc.ref.collection("authors");
   const MAX_PAGES = sinceId ? 5 : 2;
+  const notifyFavorites = Boolean(sinceId);
+  const favoriteIds = notifyFavorites
+    ? await loadFavoriteIds(userDoc.id)
+    : new Set();
 
   for (let page = 0; page < MAX_PAGES; page++) {
     const tweets = paginator.tweets || [];
@@ -600,9 +606,15 @@ async function syncViaV2(client, userDoc, sinceId) {
       if (!newestId || BigInt(tweet.id) > BigInt(newestId)) {
         newestId = tweet.id;
       }
-      await postsCol.doc(tweet.id).set(mapTweetV2(tweet, includes), {
-        merge: true,
-      });
+      const mapped = mapTweetV2(tweet, includes);
+      await writePostMaybeNotify(
+        userDoc.id,
+        postsCol,
+        tweet.id,
+        mapped,
+        favoriteIds,
+        notifyFavorites
+      );
       written += 1;
     }
 
@@ -628,6 +640,10 @@ async function syncViaV1(client, userDoc, sinceId) {
   let newestId = sinceId || null;
   const postsCol = userDoc.ref.collection("posts");
   const authorsCol = userDoc.ref.collection("authors");
+  const notifyFavorites = Boolean(sinceId);
+  const favoriteIds = notifyFavorites
+    ? await loadFavoriteIds(userDoc.id)
+    : new Set();
 
   const cutoff = sinceId ? 0 : Date.now() - 24 * 60 * 60 * 1000;
 
@@ -653,11 +669,153 @@ async function syncViaV1(client, userDoc, sinceId) {
         { merge: true }
       );
     }
-    await postsCol.doc(tweet.id_str).set(mapTweetV1(tweet), { merge: true });
+    const mapped = mapTweetV1(tweet);
+    await writePostMaybeNotify(
+      userDoc.id,
+      postsCol,
+      tweet.id_str,
+      mapped,
+      favoriteIds,
+      notifyFavorites
+    );
     written += 1;
   }
 
   return { fetched, written, newestId, api: "v1" };
+}
+
+async function loadFavoriteIds(uid) {
+  const snap = await db
+    .collection("users")
+    .doc(uid)
+    .collection("favorites")
+    .get();
+  return new Set(snap.docs.map((d) => d.id));
+}
+
+async function writePostMaybeNotify(
+  uid,
+  postsCol,
+  tweetId,
+  mapped,
+  favoriteIds,
+  notifyFavorites
+) {
+  const ref = postsCol.doc(String(tweetId));
+  const existing = await ref.get();
+  const isNew = !existing.exists;
+  await ref.set(mapped, { merge: true });
+  if (!notifyFavorites || !isNew || !favoriteIds.size) return;
+  const authorId = mapped.authorId ? String(mapped.authorId) : "";
+  const repostedById = mapped.repostedById ? String(mapped.repostedById) : "";
+  if (!favoriteIds.has(authorId) && !favoriteIds.has(repostedById)) return;
+  try {
+    await notifyFavoritePost(uid, String(tweetId), mapped);
+  } catch (err) {
+    logger.warn("favorite push failed", {
+      uid,
+      tweetId,
+      error: err.message,
+    });
+  }
+}
+
+async function notifyFavoritePost(uid, tweetId, mapped) {
+  const snap = await db
+    .collection("users")
+    .doc(uid)
+    .collection("devices")
+    .get();
+  const tokens = [];
+  for (const docSnap of snap.docs) {
+    const data = docSnap.data() || {};
+    if (data.enabled === false) continue;
+    if (data.token) tokens.push(String(data.token));
+  }
+  if (!tokens.length) return;
+
+  const handle =
+    mapped.repostedByHandle || mapped.authorHandle || "someone";
+  const title = `@${handle} posted`;
+  const body = String(mapped.text || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 140);
+
+  const res = await messaging.sendEachForMulticast({
+    tokens,
+    notification: { title, body: body || "New post from a favorited account" },
+    data: {
+      tweetId: String(tweetId),
+      url: mapped.url ? String(mapped.url) : "",
+    },
+    android: { priority: "high" },
+  });
+  if (res.failureCount) {
+    logger.warn("FCM partial failures", {
+      uid,
+      failureCount: res.failureCount,
+      successCount: res.successCount,
+    });
+  }
+}
+
+function extractStatusIdFromUrl(raw) {
+  try {
+    const u = new URL(String(raw));
+    const match = (u.pathname || "").match(
+      /\/(?:i\/)?(?:web\/)?status(?:es)?\/(\d+)/i
+    );
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+async function followRedirects(startUrl, maxHops = 8) {
+  let current = String(startUrl);
+  for (let i = 0; i < maxHops; i++) {
+    const res = await fetch(current, {
+      method: "GET",
+      redirect: "manual",
+      headers: {
+        "User-Agent": "MyTwitterBot/1.0",
+        Accept: "text/html",
+      },
+    });
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get("location");
+      if (!loc) break;
+      current = new URL(loc, current).toString();
+      continue;
+    }
+    return res.url || current;
+  }
+  return current;
+}
+
+function serializePostForClient(tweetId, mapped) {
+  const created =
+    mapped.createdAt?.toDate?.() ||
+    (mapped.createdAt instanceof Date ? mapped.createdAt : null);
+  return {
+    id: String(tweetId),
+    text: mapped.text || "",
+    authorId: mapped.authorId || null,
+    authorName: mapped.authorName || null,
+    authorHandle: mapped.authorHandle || null,
+    authorAvatar: mapped.authorAvatar || null,
+    createdAt: created ? created.toISOString() : null,
+    media: mapped.media || [],
+    mediaUrls: mapped.mediaUrls || [],
+    linkPreview: mapped.linkPreview || null,
+    url: mapped.url || `https://x.com/i/status/${tweetId}`,
+    isRetweet: Boolean(mapped.isRetweet),
+    repostedById: mapped.repostedById || null,
+    repostedByHandle: mapped.repostedByHandle || null,
+    repostedByName: mapped.repostedByName || null,
+    repostedByAvatar: mapped.repostedByAvatar || null,
+  };
 }
 
 async function backfillVideoMedia(client, userDoc) {
@@ -941,6 +1099,7 @@ async function upsertMemberAndUser({
 exports.startXAuth = onRequest(oauthSecretOpts, async (req, res) => {
   try {
     const invite = (req.query.invite || "").toString().trim() || null;
+    const clientHint = (req.query.client || "").toString().trim().toLowerCase() || null;
     const client = new TwitterApi({
       clientId: xClientId.value(),
       clientSecret: xClientSecret.value(),
@@ -958,6 +1117,7 @@ exports.startXAuth = onRequest(oauthSecretOpts, async (req, res) => {
       .set({
         codeVerifier,
         invite,
+        client: clientHint,
         createdAt: FieldValue.serverTimestamp(),
         expiresAt: Timestamp.fromMillis(Date.now() + OAUTH_SESSION_TTL_MS),
       });
@@ -984,7 +1144,15 @@ exports.xOAuthCallback = onRequest(
     ],
   },
   async (req, res) => {
+    let oauthClientHint = null;
+
     const fail = (msg) => {
+      if (oauthClientHint === "android") {
+        const u = new URL("mytwitter://auth");
+        u.searchParams.set("authError", msg);
+        res.redirect(302, u.toString());
+        return;
+      }
       const u = new URL(getSiteUrl());
       u.searchParams.set("authError", msg);
       res.redirect(302, u.toString());
@@ -1010,6 +1178,7 @@ exports.xOAuthCallback = onRequest(
         return;
       }
       const session = sessionSnap.data();
+      oauthClientHint = (session?.client || "").toString().toLowerCase() || null;
       await sessionRef.delete();
 
       if (
@@ -1097,6 +1266,12 @@ exports.xOAuthCallback = onRequest(
       const customToken = await getSigningAuth().createCustomToken(xUserId, {
         handle: normalizeHandle(handle),
       });
+      if (oauthClientHint === "android") {
+        const u = new URL("mytwitter://auth");
+        u.searchParams.set("token", customToken);
+        res.redirect(302, u.toString());
+        return;
+      }
       const u = new URL(getSiteUrl());
       u.searchParams.set("token", customToken);
       res.redirect(302, u.toString());
@@ -1328,6 +1503,134 @@ exports.setLiked = onCall(followFnOpts, async (request) => {
 
   return { tweetId, liked: like };
 });
+
+exports.resolveTweetUrl = onCall(
+  { region: "us-central1", timeoutSeconds: 30, memory: "256MiB" },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError("unauthenticated", "Sign in required");
+    }
+    const memberSnap = await db
+      .collection("members")
+      .doc(request.auth.uid)
+      .get();
+    if (!memberSnap.exists || memberSnap.data()?.enabled === false) {
+      throw new HttpsError("permission-denied", "Not a member");
+    }
+
+    const raw = String(request.data?.url || "").trim();
+    if (!raw) {
+      throw new HttpsError("invalid-argument", "url required");
+    }
+
+    let candidate = raw;
+    try {
+      const u = new URL(raw);
+      const host = u.hostname.replace(/^www\./i, "").toLowerCase();
+      if (host === "t.co") {
+        candidate = await followRedirects(raw);
+      }
+    } catch {
+      throw new HttpsError("invalid-argument", "Invalid url");
+    }
+
+    const tweetId = extractStatusIdFromUrl(candidate);
+    if (!tweetId) {
+      throw new HttpsError(
+        "not-found",
+        "Could not find a tweet id in that link."
+      );
+    }
+    return { tweetId, resolvedUrl: candidate };
+  }
+);
+
+exports.getTweet = onCall(followFnOpts, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError("unauthenticated", "Sign in required");
+  }
+  const tweetId = String(request.data?.tweetId || "").trim();
+  if (!/^\d+$/.test(tweetId)) {
+    throw new HttpsError("invalid-argument", "tweetId required");
+  }
+
+  const postRef = db
+    .collection("users")
+    .doc(request.auth.uid)
+    .collection("posts")
+    .doc(tweetId);
+  const existing = await postRef.get();
+  if (existing.exists) {
+    return { post: serializePostForClient(tweetId, existing.data() || {}) };
+  }
+
+  const { client } = await callerClient(request.auth.uid);
+  try {
+    const res = await client.v2.singleTweet(tweetId, {
+      "tweet.fields": TWEET_FIELDS,
+      expansions: EXPANSIONS,
+      "media.fields": MEDIA_FIELDS,
+      "user.fields": USER_FIELDS,
+    });
+    const tweet = res?.data;
+    if (!tweet) {
+      throw new HttpsError("not-found", "Tweet not found");
+    }
+    const includes = res.includes || {};
+    const mapped = mapTweetV2(tweet, includes);
+    await postRef.set(mapped, { merge: true });
+    return { post: serializePostForClient(tweetId, mapped) };
+  } catch (err) {
+    if (err instanceof HttpsError) throw err;
+    throwXError(err, "Sign out and sign in again to load posts.");
+  }
+});
+
+exports.registerDevice = onCall(
+  { region: "us-central1" },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError("unauthenticated", "Sign in required");
+    }
+    const memberSnap = await db
+      .collection("members")
+      .doc(request.auth.uid)
+      .get();
+    if (!memberSnap.exists || memberSnap.data()?.enabled === false) {
+      throw new HttpsError("permission-denied", "Not a member");
+    }
+
+    const token = String(request.data?.token || "").trim();
+    const platform = String(request.data?.platform || "android")
+      .trim()
+      .toLowerCase();
+    if (!token || token.length < 20) {
+      throw new HttpsError("invalid-argument", "token required");
+    }
+
+    const tokenId = crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex")
+      .slice(0, 40);
+    await db
+      .collection("users")
+      .doc(request.auth.uid)
+      .collection("devices")
+      .doc(tokenId)
+      .set(
+        {
+          token,
+          platform: platform || "android",
+          enabled: true,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+    return { ok: true };
+  }
+);
 
 exports.syncTimeline = onSchedule(
   {

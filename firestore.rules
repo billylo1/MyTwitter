@@ -61,6 +61,11 @@ service cloud.firestore {
       allow read, create, update, delete: if memberEnabled() && isOwner(uid);
     }
 
+    // Device tokens — Admin SDK only (registerDevice callable).
+    match /users/{uid}/devices/{deviceId} {
+      allow read, write: if false;
+    }
+
     // Tokens and sync metadata — Admin SDK only.
     match /users/{uid} {
       allow read, write: if false;

@@ -40,7 +40,8 @@ flowchart LR
 
 | Piece | Role |
 |-------|------|
-| [`public/`](../public/) | Static SPA: Auth gate, own feed, likes/share, author hover, info dialog, usage |
+| [`public/`](../public/) | Static SPA: Auth gate, own feed, likes/share, favorites, author card, info dialog, usage |
+| `android/` | Native WebView shell (Android): loads `SITE_URL`, Custom Tabs OAuth, status-link intents, FCM |
 | `public/firebase-config.js` | Local Firebase web config (`window.FIREBASE_CONFIG`; gitignored) |
 | Hosting rewrites | `/oauth/start` → `startXAuth`, `/oauth/callback` → `xOAuthCallback` |
 | Cloud Functions | See exports table below |
@@ -52,13 +53,16 @@ flowchart LR
 
 | Export | Type | Purpose |
 |--------|------|---------|
-| `startXAuth` | HTTP | OAuth start + PKCE session |
-| `xOAuthCallback` | HTTP | Token exchange, membership, custom token, post-OAuth sync |
+| `startXAuth` | HTTP | OAuth start + PKCE session; optional `?client=android` for native return |
+| `xOAuthCallback` | HTTP | Token exchange, membership, custom token, post-OAuth sync; Android redirects to `mytwitter://auth` |
 | `createInvite` | Callable | Admin invite links (requires `invitesEnabled`) |
 | `getAuthorCard` | Callable | Profile + `connection_status` |
 | `setFollowing` | Callable | Follow / unfollow on X |
 | `setLiked` | Callable | Like / unlike on X + Firestore mirror |
-| `syncTimeline` | Scheduler (`every 10 minutes`) | Poll all enabled users |
+| `resolveTweetUrl` | Callable | Expand `t.co` / parse status URLs → tweet id |
+| `getTweet` | Callable | Fetch a tweet via X API + write-through to own posts |
+| `registerDevice` | Callable | Store FCM device token under `users/{uid}/devices` |
+| `syncTimeline` | Scheduler (`every 10 minutes`) | Poll all enabled users; push when favorited authors post |
 | `syncNow` | HTTP `?key=` | Manual sync |
 
 Hosting also sets `Referrer-Policy: no-referrer`. Firestore database location is `nam5` (`firebase.json`).
@@ -100,6 +104,7 @@ Hosting also sets `Referrer-Policy: no-referrer`. Firestore database location is
 | `users/{xUserId}/authors/{id}` | Read **own** (rules) | Cached on sync (`name`, `username`, `profileImageUrl`, `description`, `verified`, `updatedAt`); UI loads live cards via `getAuthorCard` |
 | `users/{xUserId}/likes/{tweetId}` | Read **own** likes | Mirror of likes made from the site (`likedAt`) |
 | `users/{xUserId}/favorites/{authorId}` | Read/write **own** | Curated watchlist (`handle`, `name`, `avatar`, `favoritedAt`); MyTwitter-only, not X bookmarks |
+| `users/{xUserId}/devices/{tokenId}` | Admin only | FCM tokens (`token`, `platform`, `enabled`, `updatedAt`) |
 | `users/{xUserId}/sync/state` | Admin only | `sinceId`, `lastSyncAt`, fetch/write stats, `lastError`, … |
 | `config/public` | Read if member | `usage.*` (`postsReadCumulative`, `cyclePostsRead`, `pricePerPostUsd`, …), `lastRefreshedAt`, `invitesEnabled` (default `false`); legacy `defaultUid` / `defaultHandle` may exist from CLI oauth scripts |
 | `config/allowlist` | Admin only | `handles[]`, `xUserIds[]` |
@@ -133,6 +138,7 @@ Rules: [`firestore.rules`](../firestore.rules) — no world-readable posts.
 - Link preview cards (domain, title, description, thumbnail) when `linkPreview` is present.
 - Header: title, handle, relative refresh time, info, sign out on one line. Info dialog: status, usage (cumulative + this cycle), admin invite button (only if `invitesEnabled`; client creates invites with `maxUses: 5`, `days: 14`).
 - Author profile card (hover on desktop, tap on touch): Follow / Unfollow (`getAuthorCard`, `setFollowing`) and **Favorite** toggle (Firestore `users/{uid}/favorites`). Feed cards show a star mark for posts from favorited accounts. Follow defaults to Following until the API returns. Requires a fresh X sign-in after `follows.write` / `like.write` scopes were added.
+- Deep links: `?tweet=` and `window.MyTwitterOpenTweet` open/highlight a post (or fetch via `getTweet`). Native Android registers for push and opens tweets from notifications / status intents.
 
 ## Secrets (Cloud Functions)
 

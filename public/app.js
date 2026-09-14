@@ -66,6 +66,8 @@ let likedIds = new Set();
 let favoritedIds = new Set();
 /** @type {Map<string, object>} */
 const favoriteMeta = new Map();
+let pendingTweetId = null;
+let highlightClearTimer = 0;
 
 function formatUsd(amount) {
   if (typeof amount !== "number" || Number.isNaN(amount)) return "—";
@@ -274,7 +276,10 @@ function renderLinkPreview(preview) {
 }
 
 function renderPost(id, data) {
-  const created = data.createdAt?.toDate?.() || null;
+  const created =
+    data.createdAt?.toDate?.() ||
+    (typeof data.createdAt === "string" ? new Date(data.createdAt) : null) ||
+    (data.createdAt instanceof Date ? data.createdAt : null);
   const handle = data.authorHandle || "unknown";
   const avatar =
     data.authorAvatar ||
@@ -384,6 +389,9 @@ const authorCardBio = document.getElementById("author-card-bio");
 const authorCardStatus = document.getElementById("author-card-status");
 const authorCardFollow = document.getElementById("author-card-follow");
 const authorCardFavorite = document.getElementById("author-card-favorite");
+const tweetDialogEl = document.getElementById("tweet-dialog");
+const tweetDialogBody = document.getElementById("tweet-dialog-body");
+const tweetDialogClose = document.getElementById("tweet-dialog-close");
 /** @type {Map<string, object>} */
 const authorCardCache = new Map();
 let authorShowTimer = 0;
@@ -712,6 +720,120 @@ async function toggleFavorite(author) {
   }
 }
 
+function highlightCard(card) {
+  if (!card) return;
+  for (const el of feedEl.querySelectorAll(".card.is-tweet-highlight")) {
+    el.classList.remove("is-tweet-highlight");
+  }
+  card.classList.add("is-tweet-highlight");
+  card.scrollIntoView({ behavior: "smooth", block: "center" });
+  window.clearTimeout(highlightClearTimer);
+  highlightClearTimer = window.setTimeout(() => {
+    card.classList.remove("is-tweet-highlight");
+  }, 4000);
+}
+
+async function openTweetById(tweetId) {
+  const id = String(tweetId || "").replace(/\D/g, "");
+  if (!id) return;
+  const existing = feedEl.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
+  if (existing) {
+    highlightCard(existing);
+    if (tweetDialogEl?.open) tweetDialogEl.close();
+    return;
+  }
+  if (!auth.currentUser) {
+    pendingTweetId = id;
+    return;
+  }
+
+  statusEl.textContent = "Loading post…";
+  try {
+    const postSnap = await getDoc(doc(db, "users", auth.currentUser.uid, "posts", id));
+    let data = postSnap.exists() ? postSnap.data() : null;
+    if (!data) {
+      const getTweet = httpsCallable(functions, "getTweet");
+      const result = await getTweet({ tweetId: id });
+      data = result.data?.post || null;
+    }
+    if (!data) {
+      statusEl.textContent = "Could not find that post.";
+      return;
+    }
+    if (tweetDialogBody && tweetDialogEl) {
+      const el = createPostElement(id, data);
+      el.querySelector(".card-hit")?.remove();
+      tweetDialogBody.innerHTML = "";
+      tweetDialogBody.appendChild(el);
+      if (!tweetDialogEl.open) tweetDialogEl.showModal();
+      statusEl.textContent = "Post loaded.";
+    } else {
+      highlightCard(createPostElement(id, data));
+    }
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent =
+      err.code === "functions/failed-precondition"
+        ? err.message
+        : "Could not open that post.";
+  }
+}
+
+async function flushPendingTweet() {
+  if (!pendingTweetId) return;
+  const id = pendingTweetId;
+  pendingTweetId = null;
+  await openTweetById(id);
+}
+
+/** Native shells and deep links call this with a tweet id or URL. */
+window.MyTwitterOpenTweet = function MyTwitterOpenTweet(tweetIdOrUrl) {
+  const raw = String(tweetIdOrUrl || "").trim();
+  if (!raw) return;
+  if (/^\d+$/.test(raw)) {
+    void openTweetById(raw);
+    return;
+  }
+  const statusMatch = raw.match(/status(?:es)?\/(\d+)/i);
+  if (statusMatch) {
+    void openTweetById(statusMatch[1]);
+    return;
+  }
+  void (async () => {
+    try {
+      const resolveTweetUrl = httpsCallable(functions, "resolveTweetUrl");
+      const result = await resolveTweetUrl({ url: raw });
+      const tweetId = result.data?.tweetId;
+      if (tweetId) await openTweetById(tweetId);
+      else statusEl.textContent = "Could not resolve that link.";
+    } catch (err) {
+      console.error(err);
+      statusEl.textContent = "Could not resolve that link.";
+    }
+  })();
+};
+
+window.addEventListener("mytwitter:openTweet", (event) => {
+  const detail = event?.detail;
+  const id = detail?.tweetId || detail?.id || detail;
+  if (id) window.MyTwitterOpenTweet(id);
+});
+
+async function registerNativeDeviceIfPresent() {
+  const native = window.MyTwitterNative;
+  if (!native || typeof native.requestPushRegistration !== "function") return;
+  try {
+    const payload = await native.requestPushRegistration();
+    const token = payload?.token || payload;
+    const platform = payload?.platform || native.platform || "android";
+    if (!token || typeof token !== "string") return;
+    const registerDevice = httpsCallable(functions, "registerDevice");
+    await registerDevice({ token, platform });
+  } catch (err) {
+    console.warn("Push registration skipped", err);
+  }
+}
+
 async function toggleLike(card, btn) {
   const tweetId = card.dataset.id;
   if (!tweetId || btn.disabled) return;
@@ -906,6 +1028,9 @@ function startAuthUrl() {
   const invite = inviteFromUrl();
   const u = new URL(START_X_AUTH);
   if (invite) u.searchParams.set("invite", invite);
+  if (window.MyTwitterNative?.platform === "android") {
+    u.searchParams.set("client", "android");
+  }
   return u.toString();
 }
 
@@ -935,6 +1060,7 @@ async function consumeAuthParams() {
   const token = params.get("token");
   const authError = params.get("authError");
   const invite = params.get("invite");
+  const tweet = params.get("tweet");
 
   if (authError) {
     showAuthError(authError);
@@ -948,6 +1074,13 @@ async function consumeAuthParams() {
     const next = `${location.pathname}${params.toString() ? `?${params}` : ""}${location.hash}`;
     history.replaceState({}, "", next);
     await signInWithCustomToken(auth, token);
+  }
+
+  if (tweet) {
+    pendingTweetId = tweet;
+    params.delete("tweet");
+    const next = `${location.pathname}${params.toString() ? `?${params}` : ""}${location.hash}`;
+    history.replaceState({}, "", next);
   }
 
   if (invite && !authError) {
@@ -986,6 +1119,10 @@ async function enterApp(user) {
   subscribeLikes(user.uid);
   subscribeFavorites(user.uid);
   subscribeFeed(user.uid);
+  await registerNativeDeviceIfPresent();
+  window.setTimeout(() => {
+    void flushPendingTweet();
+  }, 500);
 }
 
 function wireUi() {
@@ -1068,6 +1205,13 @@ function wireUi() {
       event.stopPropagation();
       if (!authorCardState?.id) return;
       await toggleFavorite(authorCardState);
+    });
+  }
+
+  if (tweetDialogEl && tweetDialogClose) {
+    tweetDialogClose.addEventListener("click", () => tweetDialogEl.close());
+    tweetDialogEl.addEventListener("click", (event) => {
+      if (event.target === tweetDialogEl) tweetDialogEl.close();
     });
   }
 
@@ -1168,7 +1312,7 @@ async function boot() {
         configUnsub = null;
       }
       showAuthGate(
-        "Sign in with X to view your following feed. Friends and family only."
+        "Sign in with X to view your following feed."
       );
       return;
     }

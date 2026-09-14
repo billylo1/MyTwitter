@@ -7,7 +7,7 @@
     <meta name="referrer" content="no-referrer" />
     <meta
       name="description"
-      content="Private following feeds for friends and family."
+      content="Private following feeds."
     />
     <link rel="stylesheet" href="/styles.css" />
   </head>
@@ -16,7 +16,7 @@
       <div class="auth-card">
         <h1>MyTwitter</h1>
         <p id="auth-message" class="auth-message">
-          Sign in with X to view your following feed. Friends and family only.
+          Sign in with X to view your following feed.
         </p>
         <p id="auth-error" class="auth-error hidden" role="alert"></p>
         <a id="sign-in-btn" class="btn primary" href="#">Sign in with X</a>
@@ -92,5 +92,13 @@
       <p id="author-card-bio" class="author-card-bio"></p>
       <p id="author-card-status" class="author-card-status hidden"></p>
     </div>
+
+    <dialog id="tweet-dialog" class="tweet-dialog" aria-labelledby="tweet-dialog-title">
+      <div class="tweet-dialog-header">
+        <h2 id="tweet-dialog-title">Post</h2>
+        <button type="button" id="tweet-dialog-close" class="info-close" aria-label="Close">×</button>
+      </div>
+      <div id="tweet-dialog-body" class="tweet-dialog-body"></div>
+    </dialog>
   </body>
 </html>

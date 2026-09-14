@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "769496094182",
+    "project_id": "mytwitter-feed",
+    "storage_bucket": "mytwitter-feed.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:769496094182:android:d84f4d6229b7a1b6323227",
+        "android_client_info": {
+          "package_name": "org.evergreenlabs.mytwitter"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC9MjtkFyGCmPrELBYrD1SLeT20R1yjvrk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

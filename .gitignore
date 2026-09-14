@@ -27,6 +27,10 @@ android/captures/
 android/.idea/
 android/*.iml
 android/app/release/
+ios/Config.xcconfig
+ios/**/xcuserdata/
+ios/*.xcuserstate
+ios/DerivedData/
 *.apk
 *.aab
 *.ap_

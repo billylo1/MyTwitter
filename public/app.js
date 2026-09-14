@@ -1093,8 +1093,9 @@ function startAuthUrl() {
   const invite = inviteFromUrl();
   const u = new URL(START_X_AUTH);
   if (invite) u.searchParams.set("invite", invite);
-  if (window.MyTwitterNative?.platform === "android") {
-    u.searchParams.set("client", "android");
+  const platform = window.MyTwitterNative?.platform;
+  if (platform === "android" || platform === "ios") {
+    u.searchParams.set("client", platform);
   }
   return u.toString();
 }

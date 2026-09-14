@@ -40,8 +40,9 @@ flowchart LR
 
 | Piece | Role |
 |-------|------|
-| [`public/`](../public/) | Static SPA: Auth gate, own feed, likes/share, favorites, author card, info dialog, usage |
+| [`public/`](../public/) | Static SPA: Auth gate, own feed, likes/share, favorites, author card, info dialog; admin-only usage |
 | `android/` | Native WebView shell (Android): loads `SITE_URL`, Custom Tabs OAuth, status-link intents, FCM; optional Sentry via gitignored `sentry.dsn` / `SENTRY_DSN` |
+| `ios/` | Native WKWebView shell (iOS): loads `SITE_URL`, SFSafariViewController OAuth (`client=ios`), FCM+APNs, `mytwitter://` deep links; optional Sentry via gitignored `Config.xcconfig` |
 | `public/firebase-config.js` | Local Firebase web config (`window.FIREBASE_CONFIG`; gitignored) |
 | Hosting rewrites | `/oauth/start` → `startXAuth`, `/oauth/callback` → `xOAuthCallback` |
 | Cloud Functions | See exports table below |
@@ -53,8 +54,8 @@ flowchart LR
 
 | Export | Type | Purpose |
 |--------|------|---------|
-| `startXAuth` | HTTP | OAuth start + PKCE session; optional `?client=android` for native return |
-| `xOAuthCallback` | HTTP | Token exchange, membership, custom token, post-OAuth sync; Android redirects to `mytwitter://auth` |
+| `startXAuth` | HTTP | OAuth start + PKCE session; optional `?client=android` or `?client=ios` for native return |
+| `xOAuthCallback` | HTTP | Token exchange, membership, custom token, post-OAuth sync; native clients redirect to `mytwitter://auth` |
 | `createInvite` | Callable | Admin invite links (requires `invitesEnabled`) |
 | `getAuthorCard` | Callable | Profile + `connection_status` |
 | `setFollowing` | Callable | Follow / unfollow on X |
@@ -76,6 +77,7 @@ Hosting also sets `Referrer-Policy: no-referrer`. Firestore database location is
 | Web SDK config | `public/firebase-config.js` |
 | X + sync secrets | `.env` → `scripts/set-secrets.sh` → Secret Manager |
 | Android site URL / Sentry DSN | `android/local.properties` (`site.url`, `sentry.dsn`) or env — never commit live values |
+| iOS site URL / Sentry DSN | `ios/Config.xcconfig` (`SITE_URL`, `SENTRY_DSN`) — never commit live values |
 | Friend/family invites | `config/public.invitesEnabled` (boolean; **default off** when unset) |
 
 `SITE_URL` must match the public HTTPS origin registered in the X Developer Portal (callback = `${SITE_URL}/oauth/callback`).
@@ -139,7 +141,7 @@ Rules: [`firestore.rules`](../firestore.rules) — no world-readable posts.
 - Link preview cards (domain, title, description, thumbnail) when `linkPreview` is present.
 - Header: title, handle, relative refresh time, info, sign out on one line. Info dialog: status, app version, admin-only usage (cumulative + this cycle), invite button (only if `invitesEnabled`; client creates invites with `maxUses: 5`, `days: 14`).
 - Author profile card (hover on desktop, tap on touch): Follow / Unfollow (`getAuthorCard`, `setFollowing`) and **Favorite** toggle (Firestore `users/{uid}/favorites`). Feed cards show a star mark for posts from favorited accounts. Follow defaults to Following until the API returns. Requires a fresh X sign-in after `follows.write` / `like.write` scopes were added.
-- Deep links: `?tweet=` and `window.MyTwitterOpenTweet` open/highlight a post (or fetch via `getTweet`). Native Android registers for push and opens tweets from notifications / status intents.
+- Deep links: `?tweet=` and `window.MyTwitterOpenTweet` open/highlight a post (or fetch via `getTweet`). Native Android/iOS shells register for push and open tweets from notifications / deep links.
 
 ## Secrets (Cloud Functions)
 

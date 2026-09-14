@@ -766,6 +766,17 @@ async function notifyFavoritePost(uid, tweetId, mapped) {
         priority: "high",
       },
     },
+    apns: {
+      headers: {
+        "apns-priority": "10",
+      },
+      payload: {
+        aps: {
+          sound: "default",
+          badge: 1,
+        },
+      },
+    },
   });
   if (res.failureCount) {
     logger.warn("FCM partial failures", {
@@ -1168,7 +1179,7 @@ exports.xOAuthCallback = onRequest(
     let oauthClientHint = null;
 
     const fail = (msg) => {
-      if (oauthClientHint === "android") {
+      if (oauthClientHint === "android" || oauthClientHint === "ios") {
         const u = new URL("mytwitter://auth");
         u.searchParams.set("authError", msg);
         res.redirect(302, u.toString());
@@ -1287,7 +1298,7 @@ exports.xOAuthCallback = onRequest(
       const customToken = await getSigningAuth().createCustomToken(xUserId, {
         handle: normalizeHandle(handle),
       });
-      if (oauthClientHint === "android") {
+      if (oauthClientHint === "android" || oauthClientHint === "ios") {
         const u = new URL("mytwitter://auth");
         u.searchParams.set("token", customToken);
         res.redirect(302, u.toString());

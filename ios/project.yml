@@ -1,0 +1,90 @@
+name: MyTwitter
+options:
+  bundleIdPrefix: org.evergreenlabs
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    CLANG_ENABLE_MODULES: YES
+configs:
+  Debug: debug
+  Release: release
+configFiles:
+  Debug: Config.xcconfig
+  Release: Config.xcconfig
+packages:
+  firebase-ios-sdk:
+    url: https://github.com/firebase/firebase-ios-sdk
+    from: 12.19.1
+  sentry-cocoa:
+    url: https://github.com/getsentry/sentry-cocoa
+    from: 9.28.0
+targets:
+  MyTwitter:
+    type: application
+    platform: iOS
+    sources:
+      - path: MyTwitter
+        excludes:
+          - "**/*.md"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.evergreenlabs.mytwitter
+        PRODUCT_NAME: MyTwitter
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_FILE: MyTwitter/Info.plist
+        CODE_SIGN_ENTITLEMENTS: MyTwitter/MyTwitter.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+        OTHER_LDFLAGS: "$(inherited) -ObjC"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        DEVELOPMENT_TEAM: X5J5T5UT6J
+        CODE_SIGN_STYLE: Automatic
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+        Release:
+          SWIFT_OPTIMIZATION_LEVEL: -O
+    dependencies:
+      - package: firebase-ios-sdk
+        product: FirebaseCore
+      - package: firebase-ios-sdk
+        product: FirebaseMessaging
+      # Sentry-Dynamic embeds a dSYM in the archive; static `Sentry` triggers
+      # App Store "Upload Symbols Failed" for Sentry.framework (Xcode 16+).
+      - package: sentry-cocoa
+        product: Sentry-Dynamic
+    # Keep custom Info.plist keys; do not let empty properties wipe the file.
+    info:
+      path: MyTwitter/Info.plist
+      properties:
+        CFBundleDisplayName: MyTwitter
+        SITE_URL: $(SITE_URL)
+        SENTRY_DSN: $(SENTRY_DSN)
+        UILaunchScreen: {}
+        UIBackgroundModes:
+          - remote-notification
+        CFBundleURLTypes:
+          - CFBundleURLName: org.evergreenlabs.mytwitter
+            CFBundleURLSchemes:
+              - mytwitter
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: Default Configuration
+                UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).SceneDelegate
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        "UISupportedInterfaceOrientations~ipad":
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight

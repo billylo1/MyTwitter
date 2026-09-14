@@ -1,0 +1,456 @@
+import UIKit
+import WebKit
+import SafariServices
+import OSLog
+
+final class MainViewController: UIViewController {
+    private let log = Logger(subsystem: "org.evergreenlabs.mytwitter", category: "Web")
+    private var webView: WKWebView!
+    private let siteURL = AppConfig.siteURL
+    private var oauthSafari: SFSafariViewController?
+    private var pendingTweetOpen: String?
+
+    private static let xAuthHosts: Set<String> = [
+        "twitter.com",
+        "www.twitter.com",
+        "api.twitter.com",
+        "x.com",
+        "www.x.com",
+    ]
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = UIColor(red: 0.059, green: 0.078, blue: 0.098, alpha: 1)
+
+        let userContent = WKUserContentController()
+        userContent.add(self, name: "mytwitterNative")
+
+        let config = WKWebViewConfiguration()
+        config.userContentController = userContent
+        config.defaultWebpagePreferences.allowsContentJavaScript = true
+        config.websiteDataStore = .default()
+        // Without this, <video playsinline> still opens the system fullscreen player.
+        config.allowsInlineMediaPlayback = true
+        config.mediaTypesRequiringUserActionForPlayback = []
+        config.allowsPictureInPictureMediaPlayback = true
+
+        webView = WKWebView(frame: .zero, configuration: config)
+        webView.navigationDelegate = self
+        webView.uiDelegate = self
+        webView.allowsBackForwardNavigationGestures = true
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
+        if let ua = webView.value(forKey: "userAgent") as? String {
+            webView.customUserAgent = "\(ua) MyTwitteriOS/1.0"
+        } else {
+            webView.customUserAgent = "MyTwitteriOS/1.0"
+        }
+
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(webView)
+        NSLayoutConstraint.activate([
+            webView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+        ])
+
+        PushService.shared.tweetOpener = { [weak self] tweetId in
+            self?.openTweetById(tweetId)
+        }
+
+        if let url = URL(string: siteURL) {
+            log.info("Loading SITE_URL=\(self.siteURL, privacy: .public)")
+            webView.load(URLRequest(url: url))
+        } else {
+            log.error("Invalid SITE_URL=\(self.siteURL, privacy: .public)")
+        }
+    }
+
+    // MARK: - Deep links
+
+    func handleIncomingURL(_ url: URL) {
+        dismissOAuthSafariIfNeeded()
+        guard url.scheme?.lowercased() == "mytwitter" else {
+            if TweetUrlParser.isXStatusOrTco(url) {
+                openTweetFromURL(url)
+            }
+            return
+        }
+        switch url.host?.lowercased() {
+        case "auth":
+            applyAuthReturn(url)
+        case "tweet":
+            let id = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .first(where: { $0.name == "id" })?
+                .value
+            let tweetId = (id?.isEmpty == false ? id : nil) ?? url.lastPathComponent
+            if !tweetId.isEmpty { openTweetById(tweetId) }
+        case "url":
+            let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            let raw = comps?.queryItems?.first(where: { $0.name == "u" || $0.name == "url" })?.value
+            if let raw, let target = URL(string: raw) {
+                openTweetFromURL(target)
+            }
+        default:
+            break
+        }
+    }
+
+    private func applyAuthReturn(_ url: URL) {
+        var comps = URLComponents(string: siteURL)
+        var items: [URLQueryItem] = []
+        let incoming = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        if let token = incoming.first(where: { $0.name == "token" })?.value, !token.isEmpty {
+            items.append(URLQueryItem(name: "token", value: token))
+        }
+        if let err = incoming.first(where: { $0.name == "authError" })?.value, !err.isEmpty {
+            items.append(URLQueryItem(name: "authError", value: err))
+        }
+        comps?.queryItems = items.isEmpty ? nil : items
+        guard let target = comps?.url else { return }
+        log.info("OAuth return → WebView")
+        webView.load(URLRequest(url: target))
+    }
+
+    // MARK: - Navigation policy helpers
+
+    private func isFirstPartyHost(_ host: String) -> Bool {
+        guard let siteHost = AppConfig.siteHost else { return false }
+        if host == siteHost { return true }
+        // Firebase Hosting redirects between *.web.app and *.firebaseapp.com.
+        if siteHost.hasSuffix(".web.app") {
+            let base = String(siteHost.dropLast(".web.app".count))
+            return host == "\(base).firebaseapp.com"
+        }
+        if siteHost.hasSuffix(".firebaseapp.com") {
+            let base = String(siteHost.dropLast(".firebaseapp.com".count))
+            return host == "\(base).web.app"
+        }
+        return false
+    }
+
+    private func handleNavigation(to url: URL) -> Bool {
+        let host = url.host?.lowercased() ?? ""
+        let path = url.path
+
+        if isFirstPartyHost(host) {
+            if path.hasPrefix("/oauth/start") {
+                startOAuth(with: url)
+                return true
+            }
+            return false
+        }
+
+        if Self.xAuthHosts.contains(host), path.localizedCaseInsensitiveContains("oauth") {
+            startOAuth(with: url)
+            return true
+        }
+
+        if TweetUrlParser.isXStatusOrTco(url) {
+            openTweetFromURL(url)
+            return true
+        }
+
+        if url.scheme == "https" || url.scheme == "http" {
+            let safari = SFSafariViewController(url: url)
+            present(safari, animated: true)
+            return true
+        }
+
+        return false
+    }
+
+    private func startOAuth(with startURL: URL) {
+        var comps = URLComponents(url: startURL, resolvingAgainstBaseURL: false)
+        var items = comps?.queryItems ?? []
+        if items.first(where: { $0.name == "client" }) == nil {
+            items.append(URLQueryItem(name: "client", value: "ios"))
+        }
+        comps?.queryItems = items
+        let withClient = comps?.url ?? startURL
+
+        Task {
+            // Prefer landing Safari on the X authorize URL (Android Custom Tabs parity).
+            let authorize = await resolveRedirect(withClient.absoluteString) ?? withClient.absoluteString
+            guard let target = URL(string: authorize) else { return }
+            await MainActor.run {
+                self.presentOAuthSafari(url: target)
+            }
+        }
+    }
+
+    private func presentOAuthSafari(url: URL) {
+        dismissOAuthSafariIfNeeded()
+        let safari = SFSafariViewController(url: url)
+        safari.dismissButtonStyle = .close
+        safari.delegate = self
+        oauthSafari = safari
+        log.info("Opening OAuth Safari: \(url.absoluteString, privacy: .public)")
+        present(safari, animated: true)
+    }
+
+    private func dismissOAuthSafariIfNeeded() {
+        if let safari = oauthSafari {
+            safari.dismiss(animated: true)
+            oauthSafari = nil
+        } else if presentedViewController is SFSafariViewController {
+            presentedViewController?.dismiss(animated: true)
+        }
+    }
+
+    private func resolveRedirect(_ urlString: String) async -> String? {
+        guard let url = URL(string: urlString) else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("text/html", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 15
+        do {
+            let (_, response) = try await URLSession(
+                configuration: .ephemeral,
+                delegate: RedirectCaptureDelegate(),
+                delegateQueue: nil
+            ).data(for: request)
+            if let http = response as? HTTPURLResponse,
+               (300...399).contains(http.statusCode),
+               let location = http.value(forHTTPHeaderField: "Location"),
+               !location.isEmpty
+            {
+                return location
+            }
+        } catch {
+            log.warning("resolveRedirect failed: \(error.localizedDescription, privacy: .public)")
+        }
+        return nil
+    }
+
+    // MARK: - Tweet open
+
+    private func openTweetFromURL(_ url: URL) {
+        if let statusId = TweetUrlParser.extractStatusId(url) {
+            openTweetById(statusId)
+            return
+        }
+        let jsUrl = url.absoluteString
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+        evaluateJS(
+            """
+            (function(){
+              if (typeof window.MyTwitterOpenTweet === 'function') {
+                window.MyTwitterOpenTweet('\(jsUrl)');
+              } else {
+                window.__mytwitterPendingOpen = '\(jsUrl)';
+              }
+            })();
+            """
+        )
+        if webView.url == nil || webView.url?.absoluteString == "about:blank" {
+            if let home = URL(string: siteURL) {
+                webView.load(URLRequest(url: home))
+            }
+        }
+    }
+
+    func openTweetById(_ tweetId: String) {
+        let id = tweetId.filter(\.isNumber)
+        guard !id.isEmpty else { return }
+        var comps = URLComponents(string: siteURL)
+        comps?.queryItems = [URLQueryItem(name: "tweet", value: id)]
+        guard let target = comps?.url else { return }
+        if webView.url == nil || webView.url?.absoluteString == "about:blank" {
+            webView.load(URLRequest(url: target))
+        } else {
+            evaluateJS(
+                """
+                (function(){
+                  if (typeof window.MyTwitterOpenTweet === 'function') {
+                    window.MyTwitterOpenTweet('\(id)');
+                  } else {
+                    window.location.href = '\(target.absoluteString)';
+                  }
+                })();
+                """
+            )
+        }
+    }
+
+    // MARK: - Bridge
+
+    private func injectNativeBridge() {
+        let versionName = AppConfig.versionName
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+        let versionCode = AppConfig.versionCode
+        let pending = pendingTweetOpen
+        pendingTweetOpen = nil
+        let pendingJS: String
+        if let pending {
+            let safe = pending
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "'", with: "\\'")
+            pendingJS = "window.__mytwitterPendingOpen = '\(safe)';"
+        } else {
+            pendingJS = ""
+        }
+
+        evaluateJS(
+            """
+            (function(){
+              \(pendingJS)
+              window.MyTwitterNative = {
+                platform: 'ios',
+                versionName: '\(versionName)',
+                versionCode: \(versionCode),
+                postMessage: function(msg) {
+                  try {
+                    window.webkit.messageHandlers.mytwitterNative.postMessage({
+                      type: 'postMessage',
+                      payload: typeof msg === 'string' ? msg : JSON.stringify(msg)
+                    });
+                  } catch (e) {}
+                },
+                requestPushRegistration: function() {
+                  return new Promise(function(resolve, reject) {
+                    window.__mytwitterPushResolve = resolve;
+                    window.__mytwitterPushReject = reject;
+                    try {
+                      window.webkit.messageHandlers.mytwitterNative.postMessage({ type: 'requestPushToken' });
+                    } catch (e) {
+                      reject(e);
+                    }
+                  });
+                }
+              };
+              if (window.__mytwitterPendingOpen && typeof window.MyTwitterOpenTweet === 'function') {
+                var pending = window.__mytwitterPendingOpen;
+                window.__mytwitterPendingOpen = null;
+                window.MyTwitterOpenTweet(pending);
+              }
+              window.dispatchEvent(new CustomEvent('mytwitter:nativeReady', { detail: { platform: 'ios' } }));
+            })();
+            """
+        )
+    }
+
+    private func fulfillPushToken(_ token: String?) {
+        guard let token, !token.isEmpty else {
+            evaluateJS("window.__mytwitterPushResolve && window.__mytwitterPushResolve(null);")
+            return
+        }
+        let safe = token
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+            .replacingOccurrences(of: "\n", with: "")
+        evaluateJS(
+            """
+            window.__mytwitterPushResolve && window.__mytwitterPushResolve({
+              token: '\(safe)',
+              platform: 'ios'
+            });
+            """
+        )
+    }
+
+    private func evaluateJS(_ script: String) {
+        webView.evaluateJavaScript(script, completionHandler: nil)
+    }
+}
+
+// MARK: - Delegates
+
+extension MainViewController: WKNavigationDelegate {
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        guard let url = navigationAction.request.url else {
+            decisionHandler(.allow)
+            return
+        }
+        if handleNavigation(to: url) {
+            decisionHandler(.cancel)
+        } else {
+            decisionHandler(.allow)
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        injectNativeBridge()
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        log.error("provisional nav failed: \(error.localizedDescription, privacy: .public)")
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        log.error("nav failed: \(error.localizedDescription, privacy: .public)")
+    }
+}
+
+extension MainViewController: WKUIDelegate {
+    func webView(
+        _ webView: WKWebView,
+        runJavaScriptAlertPanelWithMessage message: String,
+        initiatedByFrame frame: WKFrameInfo,
+        completionHandler: @escaping () -> Void
+    ) {
+        log.info("JS alert: \(message, privacy: .public)")
+        completionHandler()
+    }
+}
+
+extension MainViewController: WKScriptMessageHandler {
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) {
+        guard message.name == "mytwitterNative" else { return }
+        let type: String?
+        if let dict = message.body as? [String: Any] {
+            type = dict["type"] as? String
+        } else if let s = message.body as? String {
+            type = s
+        } else {
+            type = nil
+        }
+        switch type {
+        case "requestPushToken":
+            PushService.shared.fetchFcmToken { [weak self] token in
+                DispatchQueue.main.async {
+                    self?.fulfillPushToken(token)
+                }
+            }
+        case "postMessage":
+            break
+        default:
+            break
+        }
+    }
+}
+
+extension MainViewController: SFSafariViewControllerDelegate {
+    func safariViewControllerDidFinish(_ controller: SFSafariViewController) {
+        if oauthSafari === controller {
+            oauthSafari = nil
+        }
+    }
+}
+
+/// Captures redirect Location without following it.
+private final class RedirectCaptureDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
+    }
+}

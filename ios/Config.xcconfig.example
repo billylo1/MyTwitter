@@ -1,0 +1,6 @@
+// Copy to Config.xcconfig (gitignored) and fill in.
+// In xcconfig, // starts a comment — write https:/$()/host for https://host
+
+SITE_URL = https:/$()/YOUR_PROJECT_ID.web.app
+// Optional — leave blank to disable Sentry
+SENTRY_DSN =

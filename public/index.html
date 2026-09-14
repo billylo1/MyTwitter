@@ -54,16 +54,20 @@
           </button>
         </div>
         <p class="info-line">
-          Original posts from accounts you follow. Newest first. No replies.
+          Original posts from accounts you follow. Newest first. Posts show up
+          automatically. No page refresh required.
         </p>
         <p id="status" class="info-line status" aria-live="polite">Loading…</p>
-        <p id="usage" class="info-line usage" aria-live="polite"></p>
+        <p id="app-version" class="info-line muted" aria-live="polite"></p>
         <p class="info-line muted">Updated from X about every 10 minutes.</p>
         <div id="admin-panel" class="admin-panel hidden">
           <hr class="info-hr" />
           <p class="info-line"><strong>Admin</strong></p>
-          <button type="button" id="create-invite-btn" class="btn">Create invite link</button>
-          <p id="invite-result" class="info-line muted invite-result"></p>
+          <p id="usage" class="info-line usage" aria-live="polite"></p>
+          <div id="admin-invite-section" class="hidden">
+            <button type="button" id="create-invite-btn" class="btn">Create invite link</button>
+            <p id="invite-result" class="info-line muted invite-result"></p>
+          </div>
         </div>
       </dialog>
 

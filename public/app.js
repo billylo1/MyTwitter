@@ -45,6 +45,7 @@ const signInBtn = document.getElementById("sign-in-btn");
 const signOutBtn = document.getElementById("sign-out-btn");
 const whoamiEl = document.getElementById("whoami");
 const adminPanelEl = document.getElementById("admin-panel");
+const adminInviteSectionEl = document.getElementById("admin-invite-section");
 const createInviteBtn = document.getElementById("create-invite-btn");
 const inviteResultEl = document.getElementById("invite-result");
 
@@ -53,6 +54,10 @@ const emptyEl = document.getElementById("empty");
 const statusEl = document.getElementById("status");
 const refreshedEl = document.getElementById("refreshed");
 const usageEl = document.getElementById("usage");
+const appVersionEl = document.getElementById("app-version");
+
+/** Web SPA build label (bump when shipping Hosting). Native apps override via bridge. */
+const APP_VERSION = "0.1.2";
 
 let feedUnsub = null;
 let likesUnsub = null;
@@ -60,6 +65,8 @@ let favoritesUnsub = null;
 let configUnsub = null;
 let invitesEnabled = false;
 let currentMember = null;
+/** @type {object | null} */
+let cachedUsage = null;
 /** @type {Set<string>} */
 let likedIds = new Set();
 /** @type {Set<string>} */
@@ -161,8 +168,33 @@ function renderRefreshed(ts) {
   refreshedEl.title = formatAbsolute(date);
 }
 
+function isAdminMember() {
+  return Boolean(currentMember) && currentMember.role === "admin";
+}
+
+function renderAppVersion() {
+  if (!appVersionEl) return;
+  const native = window.MyTwitterNative;
+  const name =
+    typeof native?.versionName === "string" && native.versionName.trim()
+      ? native.versionName.trim()
+      : APP_VERSION;
+  const code =
+    typeof native?.versionCode === "number"
+      ? native.versionCode
+      : typeof native?.versionCode === "string" && /^\d+$/.test(native.versionCode)
+        ? Number(native.versionCode)
+        : null;
+  appVersionEl.textContent =
+    code != null ? `Version ${name} (${code})` : `Version ${name}`;
+}
+
 function renderUsage(usage) {
   if (!usageEl) return;
+  if (!isAdminMember()) {
+    usageEl.textContent = "";
+    return;
+  }
   const total =
     typeof usage?.postsReadCumulative === "number"
       ? usage.postsReadCumulative
@@ -190,11 +222,12 @@ function renderUsage(usage) {
 }
 
 function updateAdminPanel() {
-  const show =
-    Boolean(currentMember) &&
-    currentMember.role === "admin" &&
-    invitesEnabled;
+  const show = isAdminMember();
   adminPanelEl.classList.toggle("hidden", !show);
+  if (adminInviteSectionEl) {
+    adminInviteSectionEl.classList.toggle("hidden", !(show && invitesEnabled));
+  }
+  renderUsage(show ? cachedUsage : null);
 }
 
 function subscribePublicConfig() {
@@ -204,14 +237,14 @@ function subscribePublicConfig() {
     (snap) => {
       if (!snap.exists()) {
         invitesEnabled = false;
-        renderUsage(null);
+        cachedUsage = null;
         renderRefreshed(null);
         updateAdminPanel();
         return;
       }
       const data = snap.data();
       invitesEnabled = data.invitesEnabled === true;
-      renderUsage(data.usage || null);
+      cachedUsage = data.usage || null;
       renderRefreshed(data.lastRefreshedAt || null);
       updateAdminPanel();
     },
@@ -1158,11 +1191,17 @@ async function enterApp(user) {
 }
 
 function wireUi() {
+  renderAppVersion();
+  window.addEventListener("mytwitter:nativeReady", () => renderAppVersion());
+
   const dialog = document.getElementById("info-dialog");
   const openBtn = document.getElementById("info-open");
   const closeBtn = document.getElementById("info-close");
   if (dialog && openBtn && closeBtn) {
-    openBtn.addEventListener("click", () => dialog.showModal());
+    openBtn.addEventListener("click", () => {
+      renderAppVersion();
+      dialog.showModal();
+    });
     closeBtn.addEventListener("click", () => dialog.close());
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) dialog.close();
@@ -1291,7 +1330,7 @@ function wireUi() {
     true
   );
 
-  createInviteBtn.addEventListener("click", async () => {
+  createInviteBtn?.addEventListener("click", async () => {
     inviteResultEl.textContent = "Creating…";
     try {
       const createInvite = httpsCallable(functions, "createInvite");
@@ -1339,6 +1378,7 @@ async function boot() {
       favoriteMeta.clear();
       currentMember = null;
       invitesEnabled = false;
+      cachedUsage = null;
       if (configUnsub) {
         configUnsub();
         configUnsub = null;

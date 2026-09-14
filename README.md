@@ -213,7 +213,7 @@ docs/ARCHITECTURE.md
 
 - Do not commit `.env`, `serviceAccount.json`, `.firebaserc`, or `public/firebase-config.js`.
 - Each member can read **only their own** posts, likes, and member doc — not other members’ feeds.
-- `config/public.usage` is shared across members (one X project meter) and shown in the info dialog.
+- `config/public.usage` is shared across members (one X project meter) and shown in the info dialog to **admins** only.
 - Firebase Auth uid equals X user id.
 - Firebase web API keys are public-by-design; lock down Auth domains, API key restrictions, and Firestore rules.
 - Pay-per-use billing is shared for the X project.

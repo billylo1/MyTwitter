@@ -379,6 +379,8 @@ class MainActivity : AppCompatActivity() {
             (function(){
               window.MyTwitterNative = {
                 platform: 'android',
+                versionName: ${BuildConfig.VERSION_NAME.let { "'$it'" }},
+                versionCode: ${BuildConfig.VERSION_CODE},
                 postMessage: function(msg) {
                   try {
                     MyTwitterNativeBridge.postMessage(typeof msg === 'string' ? msg : JSON.stringify(msg));

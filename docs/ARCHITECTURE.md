@@ -137,7 +137,7 @@ Rules: [`firestore.rules`](../firestore.rules) — no world-readable posts.
 - Video posts play inline (`<video controls>`); animated GIFs autoplay muted and loop; viewport `IntersectionObserver` pauses off-screen videos. Card tap still opens X except on video controls / links / link previews.
 - Each card has **Like** (X API via `setLiked`) and **Share** (Web Share API, clipboard fallback). Liked state is mirrored under `users/{uid}/likes`.
 - Link preview cards (domain, title, description, thumbnail) when `linkPreview` is present.
-- Header: title, handle, relative refresh time, info, sign out on one line. Info dialog: status, usage (cumulative + this cycle), admin invite button (only if `invitesEnabled`; client creates invites with `maxUses: 5`, `days: 14`).
+- Header: title, handle, relative refresh time, info, sign out on one line. Info dialog: status, app version, admin-only usage (cumulative + this cycle), invite button (only if `invitesEnabled`; client creates invites with `maxUses: 5`, `days: 14`).
 - Author profile card (hover on desktop, tap on touch): Follow / Unfollow (`getAuthorCard`, `setFollowing`) and **Favorite** toggle (Firestore `users/{uid}/favorites`). Feed cards show a star mark for posts from favorited accounts. Follow defaults to Following until the API returns. Requires a fresh X sign-in after `follows.write` / `like.write` scopes were added.
 - Deep links: `?tweet=` and `window.MyTwitterOpenTweet` open/highlight a post (or fetch via `getTweet`). Native Android registers for push and opens tweets from notifications / status intents.
 
@@ -165,7 +165,7 @@ Pushed via [`scripts/set-secrets.sh`](../scripts/set-secrets.sh).
 
 ## Cost model
 
-X pay-per-use bills primarily per **post read** (~$0.005). Dedup within a 24h UTC window is handled by X. Shared meter shown in the info dialog from `config/public.usage`.
+X pay-per-use bills primarily per **post read** (~$0.005). Dedup within a 24h UTC window is handled by X. Shared meter stored on `config/public.usage` and shown in the info dialog **Admin** section only.
 
 ## Out of scope
 

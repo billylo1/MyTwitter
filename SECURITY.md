@@ -21,4 +21,4 @@ Never commit `.env`, `serviceAccount.json`, `.firebaserc` with production ids yo
 
 ## Privacy model
 
-Firestore rules enforce that each signed-in member can read only their own feed, likes, and member document. There is no cross-member timeline access. Shared project usage stats live under `config/public` and are visible to all members. Social actions (like/follow) require Firebase Auth plus an active `members/{uid}` with valid X user tokens.
+Firestore rules enforce that each signed-in member can read only their own feed, likes, and member document. There is no cross-member timeline access. Shared project usage stats live under `config/public` (readable by members; the SPA shows them in the About dialog to admins only). Social actions (like/follow) require Firebase Auth plus an active `members/{uid}` with valid X user tokens.

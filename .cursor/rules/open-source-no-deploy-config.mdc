@@ -1,0 +1,36 @@
+---
+description: Open-source hygiene — no deployment-specific secrets or configs in the repo
+alwaysApply: true
+---
+
+# Open-source repo — no deployment-specific config
+
+This repository is **open source**. Treat everything that lands in git as public.
+
+## Never commit
+
+- Secrets, tokens, passwords, private keys, service accounts
+- Environment- or deployment-specific values (real DSNs, production URLs wired as hardcodes, upload keystores, Play/App Store credentials)
+- Machine-local paths or personal machine config
+
+## Do instead
+
+- Load deploy-specific values from **gitignored** files (`android/local.properties`, `.env`, `keystore.properties`) or **CI/env secrets** (`SENTRY_DSN`, `KEYSTORE_*`, etc.)
+- Keep **examples only** in git (`*.example`, docs placeholders like `YOUR_PROJECT_ID`, empty `sentry.dsn=`)
+- Prefer `BuildConfig` / env injection over hardcoding in source
+
+```kotlin
+// ❌ BAD — hardcoded deploy config in source
+options.dsn = "https://abc@o123.ingest.sentry.io/456"
+
+// ✅ GOOD — from gitignored local.properties / env → BuildConfig
+options.dsn = BuildConfig.SENTRY_DSN  // empty ⇒ feature disabled
+```
+
+```properties
+# ✅ local.properties (gitignored)
+sentry.dsn=https://…@….ingest.sentry.io/…
+site.url=https://my-deploy.web.app
+```
+
+If a change needs a real production value to run locally, put it in a gitignored file and document the key name in `docs/` or `*.example` — never paste the live value into tracked source.

@@ -27,6 +27,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import com.google.firebase.messaging.FirebaseMessaging
+import io.sentry.Sentry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -47,6 +48,12 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+
+        // One-shot debug verification that Sentry receives events.
+        if (BuildConfig.DEBUG && intent?.getBooleanExtra(EXTRA_SENTRY_TEST, false) == true) {
+            Sentry.captureException(RuntimeException("Sentry Android SDK test — MyTwitter"))
+        }
+
         setContentView(R.layout.activity_main)
         val root = findViewById<View>(R.id.root)
         webView = findViewById(R.id.webview)
@@ -439,6 +446,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "MyTwitter"
         const val EXTRA_TWEET_ID = "tweetId"
+        const val EXTRA_SENTRY_TEST = "sentryTest"
         private val X_AUTH_HOSTS = setOf(
             "twitter.com",
             "www.twitter.com",

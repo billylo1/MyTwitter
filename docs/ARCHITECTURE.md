@@ -41,7 +41,7 @@ flowchart LR
 | Piece | Role |
 |-------|------|
 | [`public/`](../public/) | Static SPA: Auth gate, own feed, likes/share, favorites, author card, info dialog, usage |
-| `android/` | Native WebView shell (Android): loads `SITE_URL`, Custom Tabs OAuth, status-link intents, FCM |
+| `android/` | Native WebView shell (Android): loads `SITE_URL`, Custom Tabs OAuth, status-link intents, FCM; optional Sentry via gitignored `sentry.dsn` / `SENTRY_DSN` |
 | `public/firebase-config.js` | Local Firebase web config (`window.FIREBASE_CONFIG`; gitignored) |
 | Hosting rewrites | `/oauth/start` → `startXAuth`, `/oauth/callback` → `xOAuthCallback` |
 | Cloud Functions | See exports table below |
@@ -75,6 +75,7 @@ Hosting also sets `Referrer-Policy: no-referrer`. Firestore database location is
 | Hosting / OAuth origin | Functions param `SITE_URL` in `functions/.env.<projectId>` |
 | Web SDK config | `public/firebase-config.js` |
 | X + sync secrets | `.env` → `scripts/set-secrets.sh` → Secret Manager |
+| Android site URL / Sentry DSN | `android/local.properties` (`site.url`, `sentry.dsn`) or env — never commit live values |
 | Friend/family invites | `config/public.invitesEnabled` (boolean; **default off** when unset) |
 
 `SITE_URL` must match the public HTTPS origin registered in the X Developer Portal (callback = `${SITE_URL}/oauth/callback`).

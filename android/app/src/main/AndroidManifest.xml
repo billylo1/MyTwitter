@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
+        android:name=".MyTwitterApplication"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
@@ -13,6 +14,11 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MyTwitter"
         android:usesCleartextTraffic="false">
+
+        <!-- Init only in MyTwitterApplication (manual SentryAndroid.init). -->
+        <meta-data
+            android:name="io.sentry.auto-init"
+            android:value="false" />
 
         <activity
             android:name=".MainActivity"

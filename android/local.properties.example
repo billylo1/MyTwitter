@@ -1,4 +1,4 @@
-## Copy to local.properties (gitignored) or set sdk.dir / site.url yourself.
-## Android Studio usually writes sdk.dir automatically.
 sdk.dir=/Users/YOU/Library/Android/sdk
 site.url=https://YOUR_PROJECT_ID.web.app
+# Optional — leave blank to disable Sentry
+sentry.dsn=

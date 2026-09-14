@@ -18,9 +18,10 @@ Edit `android/local.properties`:
 ```properties
 sdk.dir=/Users/YOU/Library/Android/sdk
 site.url=https://YOUR_PROJECT_ID.web.app
+sentry.dsn=https://YOUR_PUBLIC_KEY@oXXXX.ingest.us.sentry.io/PROJECT_ID
 ```
 
-`site.url` becomes `BuildConfig.SITE_URL`. Do not commit `local.properties`.
+`site.url` becomes `BuildConfig.SITE_URL`. `sentry.dsn` (or env `SENTRY_DSN`) becomes `BuildConfig.SENTRY_DSN`. If unset, Sentry stays disabled. Do not commit `local.properties`.
 
 Register an Android app in Firebase with package `org.evergreenlabs.mytwitter` and keep [`android/app/google-services.json`](../android/app/google-services.json) in sync (required for FCM).
 
@@ -58,7 +59,7 @@ keyAlias=mytwitter
 keyPassword=…
 ```
 
-2. Ensure `android/local.properties` has production `site.url`.
+2. Ensure `android/local.properties` has production `site.url` (and optional `sentry.dsn`), or `source ~/.sidekick-secrets/mytwitter-android-env.sh` so `SENTRY_DSN` is set.
 
 3. Build the Play App Bundle:
 

@@ -5,6 +5,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.gms.google-services")
+    id("io.sentry.android.gradle")
 }
 
 val localProperties = Properties().apply {
@@ -23,6 +24,14 @@ val siteUrl: String =
         ?: "https://YOUR_PROJECT_ID.web.app")
         .trimEnd('/')
 
+val sentryDsn: String =
+    (localProperties.getProperty("sentry.dsn")
+        ?: System.getenv("SENTRY_DSN")
+        ?: "")
+        .trim()
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+
 android {
     namespace = "org.evergreenlabs.mytwitter"
     compileSdk = 36
@@ -31,9 +40,10 @@ android {
         applicationId = "org.evergreenlabs.mytwitter"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.1.2"
         buildConfigField("String", "SITE_URL", "\"$siteUrl\"")
+        buildConfigField("String", "SENTRY_DSN", "\"$sentryDsn\"")
     }
 
     signingConfigs {
@@ -95,4 +105,15 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-messaging-ktx")
+    implementation(platform("io.sentry:sentry-bom:8.33.0"))
+    implementation("io.sentry:sentry-android")
+}
+
+sentry {
+    // Mapping upload needs SENTRY_AUTH_TOKEN; skip quietly when unset.
+    autoUploadProguardMapping.set(System.getenv("SENTRY_AUTH_TOKEN") != null)
+    includeSourceContext.set(false)
+    tracingInstrumentation {
+        enabled.set(true)
+    }
 }

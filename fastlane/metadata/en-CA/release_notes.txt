@@ -1,2 +1,3 @@
 Faster return launches: chrome and recent posts show before sign-in finishes restoring.
 Notification prompt no longer repeats after you already enabled alerts.
+On Mac, the window uses a tall phone-width layout without a gap under the title bar.

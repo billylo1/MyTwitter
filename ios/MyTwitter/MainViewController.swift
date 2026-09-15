@@ -110,12 +110,24 @@ final class MainViewController: UIViewController {
 
         webView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(webView)
-        NSLayoutConstraint.activate([
-            webView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
-            webView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
-            webView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            webView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
-        ])
+        // On Mac the title bar already owns the top chrome; pinning to safeAreaLayoutGuide
+        // leaves a blank strip of view.backgroundColor above the WKWebView (the black bar).
+        if ProcessInfo.processInfo.isiOSAppOnMac {
+            view.backgroundColor = .white
+            NSLayoutConstraint.activate([
+                webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                webView.topAnchor.constraint(equalTo: view.topAnchor),
+                webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            ])
+        } else {
+            NSLayoutConstraint.activate([
+                webView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+                webView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+                webView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+                webView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            ])
+        }
 
         PushService.shared.tweetOpener = { [weak self] tweetId in
             self?.openTweetById(tweetId)

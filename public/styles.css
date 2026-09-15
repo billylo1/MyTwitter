@@ -315,6 +315,12 @@ html.has-session #app-shell.hidden {
   flex-direction: column;
   gap: 0.85rem;
   padding-bottom: 2.5rem;
+  overflow-anchor: none;
+}
+
+/* Avoid content-visibility intrinsic-size flicker while sync mutates the DOM. */
+.feed.is-updating .card {
+  content-visibility: visible;
 }
 
 .ptr-indicator {

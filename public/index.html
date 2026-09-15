@@ -179,7 +179,7 @@
       if ("serviceWorker" in navigator && navigator.onLine !== false) {
         caches.keys().then((keys) => {
           const stale = keys.filter(
-            (k) => k.startsWith("mytwitter-shell-") && k !== "mytwitter-shell-v14"
+            (k) => k.startsWith("mytwitter-shell-") && k !== "mytwitter-shell-v15"
           );
           if (!stale.length) return;
           Promise.all(stale.map((k) => caches.delete(k))).then(() =>
@@ -192,7 +192,7 @@
       }
     </script>
     <script src="/firebase-config.js"></script>
-    <script type="module" src="/app.js?v=0.1.14"></script>
+    <script type="module" src="/app.js?v=0.1.15"></script>
     <div id="author-card" class="author-card hidden" role="dialog" aria-label="Account" aria-modal="true">
       <div class="author-card-top">
         <img id="author-card-avatar" class="author-card-avatar" alt="" width="64" height="64" referrerpolicy="no-referrer" />

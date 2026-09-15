@@ -91,7 +91,7 @@ const appVersionEl = document.getElementById("app-version");
 const ptrIndicatorEl = document.getElementById("ptr-indicator");
 
 /** Web SPA build label (bump when shipping Hosting). Native apps override via bridge. */
-const APP_VERSION = "0.1.14";
+const APP_VERSION = "0.1.15";
 const SESSION_HINT_KEY = "mytwitter:hasSession";
 const LAST_UID_KEY = "mytwitter:lastUid";
 const FEED_CACHE_KEY = "mytwitter:feedCache:v1";
@@ -1410,6 +1410,11 @@ function subscribeFeed(uid, { onFirstPaint } = {}) {
   let firstPaintDone = false;
   let paintGen = 0;
   let restRaf = 0;
+  let anchorHoldRaf = 0;
+  /** @type {{ id: string | null, top?: number, scrollY?: number, height?: number } | null} */
+  let anchorHold = null;
+  let anchorHoldUntil = 0;
+  let anchorHoldUserMoved = false;
 
   function notifyFirstPaint() {
     if (firstPaintDone) return;
@@ -1433,18 +1438,31 @@ function subscribeFeed(uid, { onFirstPaint } = {}) {
   }
 
   function captureFeedScrollAnchor() {
-    const visible = feedEl.querySelectorAll(".card[data-id]");
-    for (const card of visible) {
+    // Prefer a card near the upper reading line — more stable than "first visible".
+    const targetY = window.innerHeight * 0.28;
+    let best = null;
+    let bestDist = Infinity;
+    for (const card of feedEl.querySelectorAll(".card[data-id]")) {
       const rect = card.getBoundingClientRect();
-      if (rect.bottom > 48 && rect.top < window.innerHeight) {
-        return { id: card.dataset.id, top: rect.top };
+      if (rect.bottom <= 0 || rect.top >= window.innerHeight) continue;
+      const dist = Math.abs(rect.top - targetY);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = {
+          id: card.dataset.id,
+          top: rect.top,
+          scrollY: window.scrollY,
+          height: document.documentElement.scrollHeight,
+        };
       }
     }
-    return {
-      id: null,
-      scrollY: window.scrollY,
-      height: document.documentElement.scrollHeight,
-    };
+    return (
+      best || {
+        id: null,
+        scrollY: window.scrollY,
+        height: document.documentElement.scrollHeight,
+      }
+    );
   }
 
   function restoreFeedScrollAnchor(anchor) {
@@ -1455,14 +1473,60 @@ function subscribeFeed(uid, { onFirstPaint } = {}) {
       );
       if (!el) return;
       const delta = el.getBoundingClientRect().top - anchor.top;
-      if (Math.abs(delta) > 1) window.scrollBy(0, delta);
+      if (Math.abs(delta) > 0.5) window.scrollBy(0, delta);
       return;
     }
-    if (anchor.scrollY > 0) {
+    if ((anchor.scrollY || 0) > 0) {
       const delta =
         document.documentElement.scrollHeight - (anchor.height || 0);
-      if (delta) window.scrollTo(0, anchor.scrollY + delta);
+      if (Math.abs(delta) > 0.5) {
+        window.scrollTo(0, anchor.scrollY + delta);
+      }
     }
+  }
+
+  function holdFeedScrollAnchor(anchor, ms = 700) {
+    if (!anchor) return;
+    if (anchorHoldRaf) {
+      window.cancelAnimationFrame(anchorHoldRaf);
+      anchorHoldRaf = 0;
+    }
+    anchorHold = anchor;
+    anchorHoldUntil = performance.now() + ms;
+    anchorHoldUserMoved = false;
+    feedEl.classList.add("is-updating");
+
+    const markUserMoved = () => {
+      anchorHoldUserMoved = true;
+    };
+    window.addEventListener("wheel", markUserMoved, { passive: true });
+    window.addEventListener("touchmove", markUserMoved, { passive: true });
+    window.addEventListener("pointerdown", markUserMoved, { passive: true });
+
+    const release = () => {
+      window.removeEventListener("wheel", markUserMoved);
+      window.removeEventListener("touchmove", markUserMoved);
+      window.removeEventListener("pointerdown", markUserMoved);
+      feedEl.classList.remove("is-updating");
+      anchorHold = null;
+      anchorHoldRaf = 0;
+    };
+
+    restoreFeedScrollAnchor(anchor);
+
+    const tick = () => {
+      if (
+        !anchorHold ||
+        anchorHoldUserMoved ||
+        performance.now() > anchorHoldUntil
+      ) {
+        release();
+        return;
+      }
+      restoreFeedScrollAnchor(anchorHold);
+      anchorHoldRaf = window.requestAnimationFrame(tick);
+    };
+    anchorHoldRaf = window.requestAnimationFrame(tick);
   }
 
   function reorderCards(snap) {
@@ -1530,6 +1594,7 @@ function subscribeFeed(uid, { onFirstPaint } = {}) {
 
   function applyIncremental(snap) {
     const anchor = captureFeedScrollAnchor();
+    feedEl.classList.add("is-updating");
 
     for (const change of snap.docChanges()) {
       const id = change.doc.id;
@@ -1566,7 +1631,8 @@ function subscribeFeed(uid, { onFirstPaint } = {}) {
     }
 
     reorderCards(snap);
-    restoreFeedScrollAnchor(anchor);
+    // Keep re-anchoring briefly while images/content-visibility settle.
+    holdFeedScrollAnchor(anchor);
   }
 
   function applyFeedSnapshot(snap) {

@@ -47,7 +47,7 @@ cd android
 | Status / t.co links | Intent filters; SPA `resolveTweetUrl` / `getTweet` / `?tweet=` |
 | Push | FCM when favorited accounts post (incremental sync); tap opens tweet. OS permission is **not** requested on cold start — the SPA shows a soft prompt once the user has favorites (or after they favorite someone), then calls `requestPushRegistration` |
 | Pull to refresh | SPA gesture calls `syncMyTimeline` (per-user sync; feed updates via Firestore) |
-| Native bridge | `window.MyTwitterNative` (`platform`, `requestPushRegistration`) |
+| Native bridge | `window.MyTwitterNative` (`platform`, `requestPushRegistration`, `setHasSession`) |
 | Portrait notch | Root padding for status bar + display cutout |
 
 Deploy Hosting + Functions (`startXAuth`, `xOAuthCallback`, `resolveTweetUrl`, `getTweet`, `registerDevice`, `syncMyTimeline`, `syncTimeline`) and Firestore rules for favorites/devices.
@@ -135,7 +135,8 @@ xcodebuild -project MyTwitter.xcodeproj -scheme MyTwitter \
 | Custom schemes | `mytwitter://auth`, `mytwitter://tweet`, `mytwitter://url` |
 | Push | FCM + APNs; tap opens tweet via `data.tweetId`. Same deferred soft-prompt flow as Android (favorites-gated; no cold-start OS dialog) |
 | Pull to refresh | Same SPA gesture → `syncMyTimeline` |
-| Native bridge | `window.MyTwitterNative` (`platform: ios`, `requestPushRegistration`, version fields) |
+| Native bridge | `window.MyTwitterNative` (`platform: ios`, `requestPushRegistration`, `setHasSession`, version fields) |
+| Returning session | `UserDefaults` + `mt_session` cookie + at-document-start `has-session` class so chrome/skeletons (and cached posts from the SPA) paint before Auth restore |
 | Safe area | WKWebView pinned to `safeAreaLayoutGuide` |
 
 Universal Links for `https://x.com/.../status/...` are not configured yet (follow-up).

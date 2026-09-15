@@ -9,6 +9,7 @@ final class MainViewController: UIViewController {
     private let siteURL = AppConfig.siteURL
     private var oauthSafari: SFSafariViewController?
     private var pendingTweetOpen: String?
+    private let launchElapsed = ProcessInfo.processInfo.systemUptime
 
     private static let xAuthHosts: Set<String> = [
         "twitter.com",
@@ -17,13 +18,73 @@ final class MainViewController: UIViewController {
         "x.com",
         "www.x.com",
     ]
+    private static let prefHasSession = "hasSession"
+    private static let sessionCookie = "mt_session"
+
+    private func bootLog(_ msg: String) {
+        let ms = Int((ProcessInfo.processInfo.systemUptime - launchElapsed) * 1000)
+        log.info("boot +\(ms)ms \(msg, privacy: .public)")
+    }
+
+    private func hasStoredSession() -> Bool {
+        UserDefaults.standard.bool(forKey: Self.prefHasSession)
+    }
+
+    private func setHasSession(_ has: Bool) {
+        UserDefaults.standard.set(has, forKey: Self.prefHasSession)
+        syncSessionCookie()
+    }
+
+    private func applySessionHint() {
+        guard hasStoredSession() else { return }
+        evaluateJS("document.documentElement.classList.add('has-session');")
+    }
+
+    /// Mirrors Android CookieManager `mt_session=1` so the SPA's inline hint script
+    /// can show chrome/skeletons before Auth IndexedDB restore finishes.
+    private func syncSessionCookie() {
+        guard let url = URL(string: siteURL), let host = url.host else { return }
+        let store = WKWebsiteDataStore.default().httpCookieStore
+        if hasStoredSession() {
+            var props: [HTTPCookiePropertyKey: Any] = [
+                .name: Self.sessionCookie,
+                .value: "1",
+                .path: "/",
+                .domain: host,
+            ]
+            if url.scheme?.lowercased() == "https" {
+                props[.secure] = "TRUE"
+            }
+            if let cookie = HTTPCookie(properties: props) {
+                store.setCookie(cookie)
+            }
+        } else {
+            store.getAllCookies { cookies in
+                for cookie in cookies where cookie.name == Self.sessionCookie {
+                    store.delete(cookie)
+                }
+            }
+        }
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        bootLog("viewDidLoad")
         view.backgroundColor = UIColor(red: 0.059, green: 0.078, blue: 0.098, alpha: 1)
 
         let userContent = WKUserContentController()
         userContent.add(self, name: "mytwitterNative")
+        if hasStoredSession() {
+            // WK equivalent of Android DOCUMENT_START_SCRIPT — class is on <html>
+            // before first paint, so has-session CSS can hide the splash immediately.
+            let script = WKUserScript(
+                source: "document.documentElement.classList.add('has-session');",
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
+            userContent.addUserScript(script)
+            bootLog("document-start session hint")
+        }
 
         let config = WKWebViewConfiguration()
         config.userContentController = userContent
@@ -64,7 +125,7 @@ final class MainViewController: UIViewController {
     }
 
     /// Bump when Hosting ships shell/JS fixes that must not stay stuck in WK HTTP cache.
-    private static let shellCacheEpoch = "0.1.7"
+    private static let shellCacheEpoch = "0.1.9"
 
     private func loadSite() {
         guard let url = URL(string: siteURL) else {
@@ -72,6 +133,7 @@ final class MainViewController: UIViewController {
             return
         }
         log.info("Loading SITE_URL=\(self.siteURL, privacy: .public)")
+        syncSessionCookie()
 
         let defaults = UserDefaults.standard
         let key = "shellCacheEpoch"
@@ -176,6 +238,7 @@ final class MainViewController: UIViewController {
         comps?.queryItems = items.isEmpty ? nil : items
         guard let target = comps?.url else { return }
         log.info("OAuth return → WebView")
+        syncSessionCookie()
         var request = URLRequest(url: target)
         request.cachePolicy = .returnCacheDataElseLoad
         webView.load(request)
@@ -315,6 +378,7 @@ final class MainViewController: UIViewController {
         )
         if webView.url == nil || webView.url?.absoluteString == "about:blank" {
             if let home = URL(string: siteURL) {
+                syncSessionCookie()
                 webView.load(URLRequest(url: home))
             }
         }
@@ -327,6 +391,7 @@ final class MainViewController: UIViewController {
         comps?.queryItems = [URLQueryItem(name: "tweet", value: id)]
         guard let target = comps?.url else { return }
         if webView.url == nil || webView.url?.absoluteString == "about:blank" {
+            syncSessionCookie()
             webView.load(URLRequest(url: target))
         } else {
             evaluateJS(
@@ -378,6 +443,14 @@ final class MainViewController: UIViewController {
                     });
                   } catch (e) {}
                 },
+                setHasSession: function(has) {
+                  try {
+                    window.webkit.messageHandlers.mytwitterNative.postMessage({
+                      type: 'setHasSession',
+                      has: !!has
+                    });
+                  } catch (e) {}
+                },
                 requestPushRegistration: function() {
                   return new Promise(function(resolve, reject) {
                     window.__mytwitterPushResolve = resolve;
@@ -396,6 +469,14 @@ final class MainViewController: UIViewController {
                 window.MyTwitterOpenTweet(pending);
               }
               window.dispatchEvent(new CustomEvent('mytwitter:nativeReady', { detail: { platform: 'ios' } }));
+              try {
+                var hinted = document.documentElement.classList.contains('has-session') ||
+                  localStorage.getItem('mytwitter:hasSession') === '1';
+                window.webkit.messageHandlers.mytwitterNative.postMessage({
+                  type: 'setHasSession',
+                  has: !!hinted
+                });
+              } catch (e) {}
             })();
             """
         )
@@ -444,7 +525,17 @@ extension MainViewController: WKNavigationDelegate {
         }
     }
 
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        bootLog("onPageStarted \(webView.url?.absoluteString ?? "")")
+        applySessionHint()
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        applySessionHint()
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        bootLog("onPageFinished \(webView.url?.absoluteString ?? "")")
         injectNativeBridge()
     }
 
@@ -493,6 +584,22 @@ extension MainViewController: WKScriptMessageHandler {
                 DispatchQueue.main.async {
                     self?.fulfillPushToken(token)
                 }
+            }
+        case "setHasSession":
+            let has: Bool
+            if let dict = message.body as? [String: Any] {
+                if let flag = dict["has"] as? Bool {
+                    has = flag
+                } else if let num = dict["has"] as? NSNumber {
+                    has = num.boolValue
+                } else {
+                    has = false
+                }
+            } else {
+                has = false
+            }
+            DispatchQueue.main.async { [weak self] in
+                self?.setHasSession(has)
             }
         case "postMessage":
             break

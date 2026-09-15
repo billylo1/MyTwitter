@@ -1,6 +1,9 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
 import {
-  getAuth,
+  initializeAuth,
+  browserLocalPersistence,
+  indexedDBLocalPersistence,
+  browserPopupRedirectResolver,
   onAuthStateChanged,
   signInWithCustomToken,
   signOut,
@@ -42,7 +45,10 @@ const START_X_AUTH = `${location.origin}/oauth/start`;
 
 bootMark("sdk-init-start");
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+const auth = initializeAuth(app, {
+  persistence: [browserLocalPersistence, indexedDBLocalPersistence],
+  popupRedirectResolver: browserPopupRedirectResolver,
+});
 const db = initializeFirestore(app, {
   localCache: persistentLocalCache({
     tabManager: persistentMultipleTabManager(),
@@ -85,8 +91,10 @@ const appVersionEl = document.getElementById("app-version");
 const ptrIndicatorEl = document.getElementById("ptr-indicator");
 
 /** Web SPA build label (bump when shipping Hosting). Native apps override via bridge. */
-const APP_VERSION = "0.1.8";
+const APP_VERSION = "0.1.9";
 const SESSION_HINT_KEY = "mytwitter:hasSession";
+const LAST_UID_KEY = "mytwitter:lastUid";
+const FEED_CACHE_KEY = "mytwitter:feedCache:v1";
 const FIRST_PAINT_CARDS = 8;
 const FEED_CHUNK = 12;
 
@@ -96,7 +104,7 @@ function hideBootSplash() {
   bootSplashEl?.classList.add("hidden");
 }
 
-function setSessionHint(on) {
+function setSessionHint(on, uid) {
   document.documentElement.classList.toggle("has-session", on);
   try {
     document.cookie = on
@@ -106,8 +114,14 @@ function setSessionHint(on) {
     /* ignore */
   }
   try {
-    if (on) localStorage.setItem(SESSION_HINT_KEY, "1");
-    else localStorage.removeItem(SESSION_HINT_KEY);
+    if (on) {
+      localStorage.setItem(SESSION_HINT_KEY, "1");
+      if (uid) localStorage.setItem(LAST_UID_KEY, uid);
+    } else {
+      localStorage.removeItem(SESSION_HINT_KEY);
+      localStorage.removeItem(LAST_UID_KEY);
+      localStorage.removeItem(FEED_CACHE_KEY);
+    }
   } catch {
     /* ignore quota / private mode */
   }
@@ -116,6 +130,89 @@ function setSessionHint(on) {
   } catch {
     /* native bridge optional */
   }
+}
+
+function serializeCachedPost(id, data) {
+  const created =
+    data.createdAt?.toDate?.() ||
+    (typeof data.createdAt === "string" ? new Date(data.createdAt) : null);
+  return {
+    id,
+    text: data.text || "",
+    url: data.url || "",
+    authorId: data.authorId || "",
+    authorHandle: data.authorHandle || "",
+    authorName: data.authorName || "",
+    authorAvatar: data.authorAvatar || "",
+    createdAt:
+      created instanceof Date && !Number.isNaN(created.getTime())
+        ? created.toISOString()
+        : null,
+    isRetweet: Boolean(data.isRetweet),
+    repostedById: data.repostedById || "",
+    repostedByHandle: data.repostedByHandle || "",
+    repostedByName: data.repostedByName || "",
+    repostedByAvatar: data.repostedByAvatar || "",
+    linkPreview: data.linkPreview || null,
+    media: Array.isArray(data.media) ? data.media.slice(0, 4) : undefined,
+    mediaUrls: Array.isArray(data.mediaUrls) ? data.mediaUrls.slice(0, 4) : undefined,
+  };
+}
+
+function writeFeedCache(uid, docs) {
+  if (!uid || !docs?.length) return;
+  try {
+    localStorage.setItem(
+      FEED_CACHE_KEY,
+      JSON.stringify({
+        uid,
+        savedAt: Date.now(),
+        posts: docs.map((d) => serializeCachedPost(d.id, d.data())),
+      })
+    );
+    localStorage.setItem(LAST_UID_KEY, uid);
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function readFeedCache() {
+  try {
+    const raw = localStorage.getItem(FEED_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.uid || !Array.isArray(parsed.posts) || !parsed.posts.length) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function paintCachedFeed() {
+  const cached = readFeedCache();
+  if (!cached) return false;
+  if (feedEl.querySelector(".card:not(.card-skeleton)")) return true;
+  hideBootSplash();
+  authGateEl.classList.add("hidden");
+  appShellEl.classList.remove("hidden");
+  const member = readMemberLocal(cached.uid);
+  if (member?.handle && !whoamiEl.textContent) {
+    whoamiEl.textContent = `@${member.handle}`;
+  }
+  feedEl.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  for (const post of cached.posts.slice(0, FIRST_PAINT_CARDS)) {
+    const el = createPostElement(post.id, post);
+    watchCardVideos(el);
+    frag.appendChild(el);
+  }
+  feedEl.appendChild(frag);
+  feedEl.setAttribute("aria-busy", "false");
+  emptyEl.classList.add("hidden");
+  bootMark("feed-cached", `${Math.min(cached.posts.length, FIRST_PAINT_CARDS)} cards`);
+  return true;
 }
 
 let feedUnsub = null;
@@ -1368,6 +1465,7 @@ function subscribeFeed(uid, { onFirstPaint } = {}) {
       const immediate = docs.slice(0, FIRST_PAINT_CARDS);
       const rest = docs.slice(FIRST_PAINT_CARDS);
       paintImmediate(immediate);
+      writeFeedCache(uid, immediate);
       bootMark(
         "feed-visible",
         `${immediate.length}/${docs.length} ${offline ? "cache" : "server"}`
@@ -1681,7 +1779,7 @@ async function refreshMembership(user) {
 
 async function enterApp(user) {
   bootMark("enterApp");
-  setSessionHint(true);
+  setSessionHint(true, user.uid);
   hideBootSplash();
   authGateEl.classList.add("hidden");
   appShellEl.classList.remove("hidden");
@@ -1903,6 +2001,7 @@ function wireUi() {
 async function boot() {
   bootMark("boot");
   wireUi();
+  paintCachedFeed();
 
   onAuthStateChanged(auth, async (user) => {
     bootMark("auth", user ? "in" : "out");
@@ -1938,7 +2037,7 @@ async function boot() {
       await enterApp(user);
     } catch (err) {
       console.error(err);
-      setSessionHint(true);
+      setSessionHint(true, user.uid);
       hideBootSplash();
       currentMember = readMemberLocal(user.uid);
       authGateEl.classList.add("hidden");

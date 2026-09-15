@@ -76,6 +76,7 @@ const authMessageEl = document.getElementById("auth-message");
 const authErrorEl = document.getElementById("auth-error");
 const signInBtn = document.getElementById("sign-in-btn");
 const signOutBtn = document.getElementById("sign-out-btn");
+const rssLinkEl = document.getElementById("rss-link");
 const whoamiEl = document.getElementById("whoami");
 const adminPanelEl = document.getElementById("admin-panel");
 const adminInviteSectionEl = document.getElementById("admin-invite-section");
@@ -91,7 +92,7 @@ const appVersionEl = document.getElementById("app-version");
 const ptrIndicatorEl = document.getElementById("ptr-indicator");
 
 /** Web SPA build label (bump when shipping Hosting). Native apps override via bridge. */
-const APP_VERSION = "0.1.15";
+const APP_VERSION = "0.1.16";
 const SESSION_HINT_KEY = "mytwitter:hasSession";
 const LAST_UID_KEY = "mytwitter:lastUid";
 const FEED_CACHE_KEY = "mytwitter:feedCache:v1";
@@ -102,6 +103,24 @@ const bootSplashEl = document.getElementById("boot-splash");
 
 function hideBootSplash() {
   bootSplashEl?.classList.add("hidden");
+}
+
+/** WKWebView is more reliable with scrollingElement.scrollTop than window.scrollBy. */
+function scrollRoot() {
+  return document.scrollingElement || document.documentElement;
+}
+
+function readScrollTop() {
+  return scrollRoot().scrollTop;
+}
+
+function writeScrollTop(top) {
+  const root = scrollRoot();
+  root.scrollTop = top;
+  // Older WKWebView builds sometimes scroll body instead of the root element.
+  if (document.body && document.body !== root) {
+    document.body.scrollTop = top;
+  }
 }
 
 function setSessionHint(on, uid) {
@@ -1410,11 +1429,6 @@ function subscribeFeed(uid, { onFirstPaint } = {}) {
   let firstPaintDone = false;
   let paintGen = 0;
   let restRaf = 0;
-  let anchorHoldRaf = 0;
-  /** @type {{ id: string | null, top?: number, scrollY?: number, height?: number } | null} */
-  let anchorHold = null;
-  let anchorHoldUntil = 0;
-  let anchorHoldUserMoved = false;
 
   function notifyFirstPaint() {
     if (firstPaintDone) return;
@@ -1438,7 +1452,9 @@ function subscribeFeed(uid, { onFirstPaint } = {}) {
   }
 
   function captureFeedScrollAnchor() {
-    // Prefer a card near the upper reading line — more stable than "first visible".
+    const root = scrollRoot();
+    const scrollTop = root.scrollTop;
+    const height = root.scrollHeight;
     const targetY = window.innerHeight * 0.28;
     let best = null;
     let bestDist = Infinity;
@@ -1451,82 +1467,45 @@ function subscribeFeed(uid, { onFirstPaint } = {}) {
         best = {
           id: card.dataset.id,
           top: rect.top,
-          scrollY: window.scrollY,
-          height: document.documentElement.scrollHeight,
+          scrollTop,
+          height,
         };
       }
     }
-    return (
-      best || {
-        id: null,
-        scrollY: window.scrollY,
-        height: document.documentElement.scrollHeight,
-      }
-    );
+    return best || { id: null, scrollTop, height };
   }
 
   function restoreFeedScrollAnchor(anchor) {
     if (!anchor) return;
+    const root = scrollRoot();
+    // 1) Height-delta first — this is what WKWebView needs when cards prepend.
+    const heightDelta = root.scrollHeight - (anchor.height || 0);
+    if (Math.abs(heightDelta) > 0.5 && (anchor.scrollTop || 0) > 0) {
+      writeScrollTop(anchor.scrollTop + heightDelta);
+    }
+    // 2) Pin the reading card's viewport offset if it still exists.
     if (anchor.id) {
       const el = feedEl.querySelector(
         `.card[data-id="${CSS.escape(anchor.id)}"]`
       );
       if (!el) return;
       const delta = el.getBoundingClientRect().top - anchor.top;
-      if (Math.abs(delta) > 0.5) window.scrollBy(0, delta);
-      return;
-    }
-    if ((anchor.scrollY || 0) > 0) {
-      const delta =
-        document.documentElement.scrollHeight - (anchor.height || 0);
       if (Math.abs(delta) > 0.5) {
-        window.scrollTo(0, anchor.scrollY + delta);
+        writeScrollTop(readScrollTop() + delta);
       }
     }
   }
 
-  function holdFeedScrollAnchor(anchor, ms = 700) {
-    if (!anchor) return;
-    if (anchorHoldRaf) {
-      window.cancelAnimationFrame(anchorHoldRaf);
-      anchorHoldRaf = 0;
-    }
-    anchorHold = anchor;
-    anchorHoldUntil = performance.now() + ms;
-    anchorHoldUserMoved = false;
-    feedEl.classList.add("is-updating");
-
-    const markUserMoved = () => {
-      anchorHoldUserMoved = true;
-    };
-    window.addEventListener("wheel", markUserMoved, { passive: true });
-    window.addEventListener("touchmove", markUserMoved, { passive: true });
-    window.addEventListener("pointerdown", markUserMoved, { passive: true });
-
-    const release = () => {
-      window.removeEventListener("wheel", markUserMoved);
-      window.removeEventListener("touchmove", markUserMoved);
-      window.removeEventListener("pointerdown", markUserMoved);
-      feedEl.classList.remove("is-updating");
-      anchorHold = null;
-      anchorHoldRaf = 0;
-    };
-
+  function restoreFeedScrollAnchorAfterLayout(anchor) {
     restoreFeedScrollAnchor(anchor);
-
-    const tick = () => {
-      if (
-        !anchorHold ||
-        anchorHoldUserMoved ||
-        performance.now() > anchorHoldUntil
-      ) {
-        release();
-        return;
-      }
-      restoreFeedScrollAnchor(anchorHold);
-      anchorHoldRaf = window.requestAnimationFrame(tick);
-    };
-    anchorHoldRaf = window.requestAnimationFrame(tick);
+    // One follow-up after layout — avoid a long rAF hold (that "flashes by" in WKWebView).
+    window.requestAnimationFrame(() => {
+      restoreFeedScrollAnchor(anchor);
+      window.requestAnimationFrame(() => {
+        restoreFeedScrollAnchor(anchor);
+        feedEl.classList.remove("is-updating");
+      });
+    });
   }
 
   function reorderCards(snap) {
@@ -1631,8 +1610,7 @@ function subscribeFeed(uid, { onFirstPaint } = {}) {
     }
 
     reorderCards(snap);
-    // Keep re-anchoring briefly while images/content-visibility settle.
-    holdFeedScrollAnchor(anchor);
+    restoreFeedScrollAnchorAfterLayout(anchor);
   }
 
   function applyFeedSnapshot(snap) {
@@ -1758,7 +1736,7 @@ function wirePullToRefresh() {
   const onTouchStart = (event) => {
     if (ptrSyncing) return;
     if (!appShellEl || appShellEl.classList.contains("hidden")) return;
-    if (window.scrollY > 2) return;
+    if (readScrollTop() > 2) return;
     const t = event.touches?.[0];
     if (!t) return;
     ptrTracking = true;
@@ -1768,7 +1746,7 @@ function wirePullToRefresh() {
 
   const onTouchMove = (event) => {
     if (!ptrTracking || ptrSyncing) return;
-    if (window.scrollY > 2) {
+    if (readScrollTop() > 2) {
       ptrTracking = false;
       setPtrIndicator("", { visible: false });
       return;
@@ -1989,6 +1967,7 @@ async function enterApp(user) {
     ? `@${currentMember.handle}`
     : "";
   updateAdminPanel();
+  void loadRssLink();
 
   const params = new URLSearchParams(location.search);
   if (params.has("uid")) {
@@ -2008,6 +1987,27 @@ async function enterApp(user) {
   window.setTimeout(() => {
     void flushPendingTweet();
   }, 500);
+}
+
+function clearRssLink() {
+  if (!rssLinkEl) return;
+  rssLinkEl.classList.add("hidden");
+  rssLinkEl.removeAttribute("href");
+}
+
+async function loadRssLink() {
+  if (!rssLinkEl) return;
+  try {
+    const getRssFeedUrl = await callable("getRssFeedUrl");
+    const result = await getRssFeedUrl({});
+    const url = result?.data?.url;
+    if (!url) return;
+    rssLinkEl.href = url;
+    rssLinkEl.classList.remove("hidden");
+  } catch (err) {
+    console.warn("[rss] could not load feed URL", err);
+    clearRssLink();
+  }
 }
 
 function wireUi() {
@@ -2243,6 +2243,7 @@ async function boot() {
       currentMember = null;
       invitesEnabled = false;
       cachedUsage = null;
+      clearRssLink();
       if (configUnsub) {
         configUnsub();
         configUnsub = null;

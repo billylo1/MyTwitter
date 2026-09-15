@@ -92,6 +92,22 @@
           <p id="whoami" class="whoami"></p>
           <p id="refreshed" class="refreshed hidden" aria-live="polite"></p>
           <div class="header-actions">
+            <a
+              id="rss-link"
+              class="info-btn rss-btn hidden"
+              href="#"
+              title="RSS feed"
+              aria-label="RSS feed"
+              target="_blank"
+              rel="noopener"
+            >
+              <svg class="rss-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M6.18 15.64a2.18 2.18 0 0 1 2.18 2.18C8.36 19 7.38 20 6.18 20 5 20 4 19 4 17.82c0-1.2.98-2.18 2.18-2.18M4 4.44v2.83c7.03 0 12.73 5.7 12.73 12.73h2.83c0-8.59-6.97-15.56-15.56-15.56m0 5.66v2.83c3.9 0 7.07 3.17 7.07 7.07h2.83c0-5.47-4.43-9.9-9.9-9.9"
+                />
+              </svg>
+            </a>
             <button
               type="button"
               id="info-open"
@@ -179,7 +195,7 @@
       if ("serviceWorker" in navigator && navigator.onLine !== false) {
         caches.keys().then((keys) => {
           const stale = keys.filter(
-            (k) => k.startsWith("mytwitter-shell-") && k !== "mytwitter-shell-v15"
+            (k) => k.startsWith("mytwitter-shell-") && k !== "mytwitter-shell-v16"
           );
           if (!stale.length) return;
           Promise.all(stale.map((k) => caches.delete(k))).then(() =>
@@ -192,7 +208,7 @@
       }
     </script>
     <script src="/firebase-config.js"></script>
-    <script type="module" src="/app.js?v=0.1.15"></script>
+    <script type="module" src="/app.js?v=0.1.16"></script>
     <div id="author-card" class="author-card hidden" role="dialog" aria-label="Account" aria-modal="true">
       <div class="author-card-top">
         <img id="author-card-avatar" class="author-card-avatar" alt="" width="64" height="64" referrerpolicy="no-referrer" />

@@ -1393,6 +1393,196 @@ exports.createInvite = onCall(
   })
 );
 
+/** Ensure the signed-in member has an rssToken; return the secret feed URL. */
+exports.getRssFeedUrl = onCall(
+  { region: "us-central1" },
+  withSentryCall("getRssFeedUrl", async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError("unauthenticated", "Sign in required");
+    }
+    const uid = request.auth.uid;
+    const memberSnap = await db.collection("members").doc(uid).get();
+    if (!memberSnap.exists || memberSnap.data()?.enabled === false) {
+      throw new HttpsError("permission-denied", "Not a member");
+    }
+
+    const userRef = db.collection("users").doc(uid);
+    const userDoc = await userRef.get();
+    let token =
+      userDoc.exists && typeof userDoc.data()?.rssToken === "string"
+        ? userDoc.data().rssToken.trim()
+        : "";
+    if (!token || token.length < 16) {
+      token = randomToken(24);
+      await userRef.set(
+        {
+          rssToken: token,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+
+    return { url: `${getSiteUrl()}/feed.xml?token=${encodeURIComponent(token)}` };
+  })
+);
+
+function escapeXml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+function cdataSafe(value) {
+  return String(value ?? "").replaceAll("]]>", "]]&gt;");
+}
+
+function truncateRssTitle(text, max = 100) {
+  const s = String(text || "").replace(/\s+/g, " ").trim();
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1)}…`;
+}
+
+function buildRssItemXml(tweetId, post) {
+  const handle = post.authorHandle || "unknown";
+  const text = post.text || "";
+  const url =
+    post.url ||
+    `https://x.com/${handle}/status/${tweetId}`;
+  const created =
+    post.createdAt && typeof post.createdAt.toDate === "function"
+      ? post.createdAt.toDate()
+      : new Date();
+
+  let title;
+  if (post.isRetweet && post.repostedByHandle) {
+    title = `@${post.repostedByHandle} reposted @${handle}: ${truncateRssTitle(text, 80)}`;
+  } else {
+    title = `@${handle}: ${truncateRssTitle(text, 100)}`;
+  }
+
+  const descParts = [`<p>${escapeXml(text).replaceAll("\n", "<br/>")}</p>`];
+  const media = Array.isArray(post.media) ? post.media : [];
+  const firstMedia = media[0];
+  const imgUrl =
+    firstMedia?.previewUrl ||
+    firstMedia?.url ||
+    (Array.isArray(post.mediaUrls) ? post.mediaUrls[0] : null);
+  if (imgUrl) {
+    descParts.push(
+      `<p><img src="${escapeXml(imgUrl)}" alt="" /></p>`
+    );
+  } else if (post.linkPreview?.url) {
+    const lp = post.linkPreview;
+    const bits = [];
+    if (lp.title) bits.push(`<strong>${escapeXml(lp.title)}</strong>`);
+    if (lp.description) bits.push(escapeXml(lp.description));
+    if (lp.imageUrl) {
+      bits.push(`<br/><img src="${escapeXml(lp.imageUrl)}" alt="" />`);
+    }
+    bits.push(
+      `<br/><a href="${escapeXml(lp.url)}">${escapeXml(lp.domain || lp.url)}</a>`
+    );
+    descParts.push(`<p>${bits.join("<br/>")}</p>`);
+  }
+
+  const description = cdataSafe(descParts.join("\n"));
+  return `<item>
+<title>${escapeXml(title)}</title>
+<link>${escapeXml(url)}</link>
+<guid isPermaLink="true">${escapeXml(url)}</guid>
+<pubDate>${created.toUTCString()}</pubDate>
+<description><![CDATA[${description}]]></description>
+</item>`;
+}
+
+/** Secret-token RSS 2.0 feed of the member's following timeline. */
+exports.feedRss = onRequest(
+  { region: "us-central1", timeoutSeconds: 30, memory: "256MiB" },
+  async (req, res) => {
+    ensureSentry();
+    try {
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        res.status(405).set("Allow", "GET, HEAD").send("Method Not Allowed");
+        return;
+      }
+
+      const token = String(req.query.token || "").trim();
+      if (!token || token.length < 16) {
+        res.status(404).send("Not found");
+        return;
+      }
+
+      const userSnap = await db
+        .collection("users")
+        .where("rssToken", "==", token)
+        .limit(1)
+        .get();
+      if (userSnap.empty) {
+        res.status(404).send("Not found");
+        return;
+      }
+
+      const userDoc = userSnap.docs[0];
+      const uid = userDoc.id;
+      const userData = userDoc.data() || {};
+      if (userData.enabled === false) {
+        res.status(404).send("Not found");
+        return;
+      }
+
+      const memberSnap = await db.collection("members").doc(uid).get();
+      if (!memberSnap.exists || memberSnap.data()?.enabled === false) {
+        res.status(404).send("Not found");
+        return;
+      }
+
+      const handle =
+        memberSnap.data()?.handle || userData.handle || uid;
+      const postsSnap = await db
+        .collection("users")
+        .doc(uid)
+        .collection("posts")
+        .orderBy("createdAt", "desc")
+        .limit(50)
+        .get();
+
+      const items = postsSnap.docs
+        .map((d) => buildRssItemXml(d.id, d.data() || {}))
+        .join("\n");
+
+      const site = getSiteUrl();
+      const channelTitle = `MyTwitter — @${handle}`;
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+<title>${escapeXml(channelTitle)}</title>
+<link>${escapeXml(site)}</link>
+<description>${escapeXml("Private following feed (secret URL). Newest first.")}</description>
+${items}
+</channel>
+</rss>`;
+
+      res.set({
+        "Content-Type": "application/rss+xml; charset=utf-8",
+        "Cache-Control": "private, max-age=300",
+      });
+      if (req.method === "HEAD") {
+        res.status(200).end();
+        return;
+      }
+      res.status(200).send(xml);
+    } catch (err) {
+      logger.error("feedRss failed", err);
+      await reportError(err, { fn: "feedRss" });
+      res.status(500).send("Internal error");
+    }
+  }
+);
+
 function mapAuthorCard(user, viewerId) {
   const connections = Array.isArray(user.connection_status)
     ? user.connection_status

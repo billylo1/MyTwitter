@@ -22,8 +22,13 @@ I hope this helps.
 - Own chronological following feed (no algorithmic ranking)
 - Like / unlike and share from each card
 - Author hover card with Follow / Unfollow
+- Favorite accounts (starred in-feed; optional push when they post)
 - Link preview cards from X URL metadata
 - Inline video / GIF
+- Pull-to-refresh to sync now
+- Offline-friendly cold start (cached shell + last posts)
+- Per-member secret-token RSS feed (header link after sign-in)
+- Android and iOS WebView apps (OAuth deep links, FCM push)
 
 <img width="612" height="1233" alt="image" src="https://github.com/user-attachments/assets/a1d1b255-6dc5-4cbd-8012-8e217ce2b9c1" />
 

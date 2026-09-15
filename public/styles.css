@@ -219,6 +219,21 @@ html.has-session #app-shell.hidden {
   outline: none;
 }
 
+a.info-btn.rss-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  font-style: normal;
+  font-weight: 400;
+}
+
+.rss-btn .rss-icon {
+  width: 1rem;
+  height: 1rem;
+  display: block;
+}
+
 .info-dialog {
   width: min(100% - 2rem, 22rem);
   margin: auto;

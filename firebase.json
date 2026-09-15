@@ -73,6 +73,10 @@
       {
         "source": "/oauth/callback",
         "function": "xOAuthCallback"
+      },
+      {
+        "source": "/feed.xml",
+        "function": "feedRss"
       }
     ]
   },

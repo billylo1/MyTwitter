@@ -45,7 +45,7 @@ flowchart LR
 | `ios/` | Native WKWebView shell (iOS): loads `SITE_URL`, SFSafariViewController OAuth (`client=ios`), FCM+APNs, `mytwitter://` deep links; same returning-user session hint (UserDefaults + cookie + `WKUserScript` at document start); optional Sentry via gitignored `Config.xcconfig`; Release uses production APNs entitlements |
 | [`fastlane/`](../fastlane/) | Homebrew Fastlane: `android beta` (Play open testing), `ios beta` (TestFlight), `beta_both` (Android then iOS). Secrets stay in env / `~/.sidekick-secrets` / ASC key path — not in git |
 | `public/firebase-config.js` | Local Firebase web config (`window.FIREBASE_CONFIG`; gitignored) |
-| Hosting rewrites | `/oauth/start` → `startXAuth`, `/oauth/callback` → `xOAuthCallback` |
+| Hosting rewrites | `/oauth/start` → `startXAuth`, `/oauth/callback` → `xOAuthCallback`, `/feed.xml` → `feedRss` |
 | Cloud Functions | See exports table below; optional Sentry via `SENTRY_DSN` in `functions/.env.<projectId>` (unset ⇒ off) |
 | Firestore | Members, posts, tokens (Admin-only), sync state, allowlist; web client enables `persistentLocalCache` for offline reads |
 | Firebase Auth | Custom tokens only; **Auth uid = X user id** |
@@ -58,6 +58,8 @@ flowchart LR
 | `startXAuth` | HTTP | OAuth start + PKCE session; optional `?client=android` or `?client=ios` for native return |
 | `xOAuthCallback` | HTTP | Token exchange, membership, custom token, post-OAuth sync; native clients redirect to `mytwitter://auth` |
 | `createInvite` | Callable | Admin invite links (requires `invitesEnabled`) |
+| `getRssFeedUrl` | Callable | Mint/return per-member secret RSS URL (`users/{uid}.rssToken`) |
+| `feedRss` | HTTP `?token=` | RSS 2.0 of that member’s following timeline (unlisted; token is the credential) |
 | `getAuthorCard` | Callable | Profile + `connection_status` |
 | `setFollowing` | Callable | Follow / unfollow on X |
 | `setLiked` | Callable | Like / unlike on X + Firestore mirror |
@@ -143,7 +145,8 @@ Rules: [`firestore.rules`](../firestore.rules) — no world-readable posts.
 - Video posts play inline (`<video controls>`); animated GIFs autoplay muted and loop; viewport `IntersectionObserver` pauses off-screen videos. Card tap still opens X except on video controls / links / link previews.
 - Each card has **Like** (X API via `setLiked`) and **Share** (Web Share API, clipboard fallback). Liked state is mirrored under `users/{uid}/likes`.
 - Link preview cards (domain, title, description, thumbnail) when `linkPreview` is present.
-- Header: title, handle, relative refresh time, info, sign out on one line. Pull-to-refresh on the feed calls `syncMyTimeline`. Info dialog: status, app version, admin-only usage (cumulative + this cycle), invite button (only if `invitesEnabled`; client creates invites with `maxUses: 5`, `days: 14`).
+- Header: title, handle, relative refresh time, RSS link (secret URL from `getRssFeedUrl`), info, sign out on one line. Pull-to-refresh on the feed calls `syncMyTimeline`. Info dialog: status, app version, admin-only usage (cumulative + this cycle), invite button (only if `invitesEnabled`; client creates invites with `maxUses: 5`, `days: 14`).
+- **RSS:** after sign-in, header link points at `/feed.xml?token=…` (token stored Admin-only on `users/{uid}.rssToken`). Treat the URL as a credential; no public open feed.
 - Author profile card (hover on desktop, tap on touch): Follow / Unfollow (`getAuthorCard`, `setFollowing`) and **Favorite** toggle (Firestore `users/{uid}/favorites`). Feed cards show a star mark for posts from favorited accounts. Follow defaults to Following until the API returns. Requires a fresh X sign-in after `follows.write` / `like.write` scopes were added.
 - Deep links: `?tweet=` and `window.MyTwitterOpenTweet` open/highlight a post already in the feed, or fetch via `getTweet` into a dialog (lookups are not written into the following timeline). Native Android/iOS shells register for push **after** a favorites-gated soft prompt (not on cold start) and open tweets from notifications / deep links. The soft prompt is skipped when `MyTwitterNative.notificationsAuthorized` is true or the user already opted in (WebView `Notification.permission` does not mirror OS grants).
 - Returning-user cold start: SPA paints last posts from `localStorage` before Auth restore; native shells set a session hint (`mt_session` + `has-session`) so chrome/skeletons appear immediately.
@@ -178,7 +181,7 @@ X pay-per-use bills primarily per **post read** (~$0.005). Dedup within a 24h UT
 
 - Google/email Auth, Firebase TwitterAuthProvider (browser OAuth 1.0a provider)
 - Per-member billing / separate X apps
-- Public world-readable feeds
+- Public world-readable feeds (open `/feed.xml` without a secret token). Per-member **tokenized** RSS is supported; the URL is unlisted and equivalent to a credential.
 - Shared / family-wide timeline (each member only sees their own)
 - Streaming / Account Activity (not available for following timeline on this tier)
 

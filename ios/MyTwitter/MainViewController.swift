@@ -137,7 +137,7 @@ final class MainViewController: UIViewController {
     }
 
     /// Bump when Hosting ships shell/JS fixes that must not stay stuck in WK HTTP cache.
-    private static let shellCacheEpoch = "0.1.15"
+    private static let shellCacheEpoch = "0.1.16"
 
     private func loadSite() {
         guard let url = URL(string: siteURL) else {

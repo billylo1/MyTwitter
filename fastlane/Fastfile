@@ -174,9 +174,13 @@ def upload_dsyms_to_sentry!
     return
   end
 
+  org = ENV.fetch("SENTRY_ORG", "evergreenlabs")
+  project = ENV.fetch("SENTRY_PROJECT", "mytwitter")
+
   begin
     sh(
       "sentry-cli debug-files upload --include-sources " \
+      "--org #{org.shellescape} --project #{project.shellescape} " \
       "#{dsym.shellescape}"
     )
   rescue StandardError => e

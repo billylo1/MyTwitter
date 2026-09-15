@@ -47,6 +47,22 @@ body {
   margin-inline: auto;
 }
 
+.boot-splash {
+  margin: 4.5rem auto 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+html.has-session .boot-splash,
+.boot-splash.hidden {
+  display: none;
+}
+
+html.has-session #app-shell.hidden {
+  display: block !important;
+}
+
 .site-header {
   padding: 0.7rem 0;
   border-bottom: 1px solid var(--border);
@@ -352,6 +368,35 @@ body {
   border-radius: var(--radius);
   padding: 1rem 1.1rem;
   cursor: pointer;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 220px;
+}
+
+.card-skeleton {
+  min-height: 7.25rem;
+  pointer-events: none;
+  cursor: default;
+  content-visibility: visible;
+}
+
+.card-skeleton::before,
+.card-skeleton::after {
+  content: "";
+  display: block;
+  background: var(--border);
+  border-radius: 6px;
+}
+
+.card-skeleton::before {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  margin-bottom: 0.85rem;
+}
+
+.card-skeleton::after {
+  width: 72%;
+  height: 0.7rem;
 }
 
 .card:hover,

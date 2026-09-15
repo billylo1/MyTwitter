@@ -10,8 +10,10 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import android.view.View
+import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -23,6 +25,8 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
@@ -44,6 +48,42 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private val siteUrl: String = BuildConfig.SITE_URL.trimEnd('/')
     private var offlineCacheReloadAttempted = false
+    private val launchElapsedMs = SystemClock.elapsedRealtime()
+    private val sessionPrefs by lazy { getSharedPreferences(PREFS, MODE_PRIVATE) }
+
+    private fun bootLog(msg: String) {
+        Log.i(TAG, "boot +${SystemClock.elapsedRealtime() - launchElapsedMs}ms $msg")
+    }
+
+    private fun hasStoredSession(): Boolean {
+        return sessionPrefs.getBoolean(PREF_HAS_SESSION, false)
+    }
+
+    private fun applySessionHint(view: WebView?) {
+        if (!hasStoredSession()) return
+        view?.evaluateJavascript(
+            "document.documentElement.classList.add('has-session');",
+            null,
+        )
+    }
+
+    private fun syncSessionCookie() {
+        val cm = CookieManager.getInstance()
+        cm.setAcceptCookie(true)
+        val cookie =
+            if (hasStoredSession()) {
+                "$SESSION_COOKIE=1; Path=/"
+            } else {
+                "$SESSION_COOKIE=; Path=/; Max-Age=0"
+            }
+        cm.setCookie(siteUrl, cookie)
+        cm.flush()
+    }
+
+    private fun loadSite(url: String = siteUrl) {
+        syncSessionCookie()
+        webView.loadUrl(url)
+    }
 
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* no-op */ }
@@ -52,6 +92,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        bootLog("onCreate")
 
         // One-shot debug verification that Sentry receives events (no-op if DSN unset).
         if (BuildConfig.DEBUG &&
@@ -100,6 +141,17 @@ class MainActivity : AppCompatActivity() {
             }
         }
         webView.addJavascriptInterface(NativeBridge(), "MyTwitterNativeBridge")
+        if (hasStoredSession() &&
+            WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
+        ) {
+            val origin = Uri.parse(siteUrl).let { "${it.scheme}://${it.host}" }
+            WebViewCompat.addDocumentStartJavaScript(
+                webView,
+                "document.documentElement.classList.add('has-session');",
+                setOf(origin),
+            )
+            bootLog("document-start session hint")
+        }
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(
                 view: WebView,
@@ -114,7 +166,13 @@ class MainActivity : AppCompatActivity() {
                 return handleNavigation(Uri.parse(url))
             }
 
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                bootLog("onPageStarted $url")
+                applySessionHint(view)
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
+                bootLog("onPageFinished $url")
                 injectNativeBridge()
             }
 
@@ -146,7 +204,7 @@ class MainActivity : AppCompatActivity() {
         )
 
         if (!handleIncomingIntent(intent)) {
-            webView.loadUrl(siteUrl)
+            loadSite()
         }
         handleTweetExtra(intent)
     }
@@ -343,7 +401,7 @@ class MainActivity : AppCompatActivity() {
                     if (!authError.isNullOrBlank()) appendQueryParameter("authError", authError)
                 }.build()
                 Log.i(TAG, "OAuth return → WebView")
-                webView.loadUrl(target.toString())
+                loadSite(target.toString())
                 return true
             }
             uri.scheme == "mytwitter" && uri.host == "tweet" -> {
@@ -388,7 +446,7 @@ class MainActivity : AppCompatActivity() {
             null,
         )
         if (webView.url.isNullOrBlank() || webView.url == "about:blank") {
-            webView.loadUrl(siteUrl)
+            loadSite()
         }
     }
 
@@ -400,7 +458,7 @@ class MainActivity : AppCompatActivity() {
             .build()
             .toString()
         if (webView.url.isNullOrBlank() || webView.url == "about:blank") {
-            webView.loadUrl(target)
+            loadSite(target)
         } else {
             webView.evaluateJavascript(
                 """
@@ -430,6 +488,9 @@ class MainActivity : AppCompatActivity() {
                     MyTwitterNativeBridge.postMessage(typeof msg === 'string' ? msg : JSON.stringify(msg));
                   } catch (e) {}
                 },
+                setHasSession: function(has) {
+                  try { MyTwitterNativeBridge.setHasSession(!!has); } catch (e) {}
+                },
                 requestPushRegistration: function() {
                   return new Promise(function(resolve, reject) {
                     window.__mytwitterPushResolve = resolve;
@@ -448,6 +509,11 @@ class MainActivity : AppCompatActivity() {
                 window.MyTwitterOpenTweet(pending);
               }
               window.dispatchEvent(new CustomEvent('mytwitter:nativeReady', { detail: { platform: 'android' } }));
+              try {
+                var hinted = document.documentElement.classList.contains('has-session') ||
+                  localStorage.getItem('mytwitter:hasSession') === '1';
+                MyTwitterNativeBridge.setHasSession(!!hinted);
+              } catch (e) {}
             })();
             """.trimIndent(),
             null,
@@ -458,6 +524,12 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun postMessage(message: String?) {
             // Reserved for future chrome messaging.
+        }
+
+        @JavascriptInterface
+        fun setHasSession(has: Boolean) {
+            sessionPrefs.edit().putBoolean(PREF_HAS_SESSION, has).apply()
+            runOnUiThread { syncSessionCookie() }
         }
 
         @JavascriptInterface
@@ -491,6 +563,9 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MyTwitter"
+        private const val PREFS = "mytwitter"
+        private const val PREF_HAS_SESSION = "hasSession"
+        private const val SESSION_COOKIE = "mt_session"
         const val EXTRA_TWEET_ID = "tweetId"
         const val EXTRA_SENTRY_TEST = "sentryTest"
         private val X_AUTH_HOSTS = setOf(

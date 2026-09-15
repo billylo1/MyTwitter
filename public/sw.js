@@ -1,6 +1,6 @@
 /* MyTwitter app-shell service worker — enables cold start offline after one online visit. */
-const CACHE = "mytwitter-shell-v6";
-const APP_JS = "/app.js?v=0.1.7";
+const CACHE = "mytwitter-shell-v8";
+const APP_JS = "/app.js?v=0.1.8";
 
 const PRECACHE = [
   "/",
@@ -73,29 +73,37 @@ function isShellAsset(url) {
   return url.href.startsWith(FIREBASE_CDN);
 }
 
-async function networkFirst(request) {
+async function staleWhileRevalidate(event, request) {
   const cache = await caches.open(CACHE);
-  try {
-    const fresh = await fetch(request);
-    if (fresh.ok) {
-      cache.put(request, fresh.clone()).catch(() => {});
-      // Also store unversioned app.js so older index.html still gets the new script.
-      const url = new URL(request.url);
-      if (url.pathname === "/app.js") {
-        cache.put("/app.js", fresh.clone()).catch(() => {});
+  const cached =
+    (await cache.match(request, { ignoreSearch: true })) ||
+    (await cache.match(request));
+  const networkPromise = fetch(request)
+    .then((fresh) => {
+      if (fresh && fresh.ok) {
+        cache.put(request, fresh.clone()).catch(() => {});
+        const url = new URL(request.url);
+        if (url.pathname === "/app.js") {
+          cache.put("/app.js", fresh.clone()).catch(() => {});
+        }
       }
-    }
-    return fresh;
-  } catch {
-    const cached =
-      (await cache.match(request, { ignoreSearch: true })) ||
-      (await cache.match(request)) ||
-      (request.mode === "navigate"
-        ? (await cache.match("/index.html")) || (await cache.match("/"))
-        : null);
-    if (cached) return cached;
-    throw new Error("offline and no cached response");
+      return fresh;
+    })
+    .catch(() => null);
+
+  if (cached) {
+    event.waitUntil(networkPromise);
+    return cached;
   }
+
+  const fresh = await networkPromise;
+  if (fresh) return fresh;
+  if (request.mode === "navigate") {
+    const fallback =
+      (await cache.match("/index.html")) || (await cache.match("/"));
+    if (fallback) return fallback;
+  }
+  throw new Error("offline and no cached response");
 }
 
 async function cacheFirst(request) {
@@ -125,12 +133,12 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (url.origin === self.location.origin && isAppScript(url.pathname)) {
-    event.respondWith(networkFirst(request));
+    event.respondWith(staleWhileRevalidate(event, request));
     return;
   }
 
   if (request.mode === "navigate") {
-    event.respondWith(networkFirst(request));
+    event.respondWith(staleWhileRevalidate(event, request));
     return;
   }
 

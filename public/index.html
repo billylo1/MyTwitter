@@ -5,11 +5,71 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MyTwitter</title>
     <meta name="referrer" content="no-referrer" />
+    <style>
+      .hidden {
+        display: none !important;
+      }
+      html.has-session .boot-splash {
+        display: none;
+      }
+      html.has-session #app-shell.hidden {
+        display: block !important;
+      }
+    </style>
     <meta
       name="description"
       content="Private following feeds."
     />
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://firestore.googleapis.com" />
+    <link rel="preconnect" href="https://identitytoolkit.googleapis.com" />
+    <link
+      rel="modulepreload"
+      href="https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js"
+      crossorigin
+    />
+    <link
+      rel="modulepreload"
+      href="https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js"
+      crossorigin
+    />
+    <link
+      rel="modulepreload"
+      href="https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js"
+      crossorigin
+    />
+    <script>
+      window.__mtBoot = performance.now();
+      window.__mtApplySessionHint = function () {
+        try {
+          var cookieHas =
+            typeof document.cookie === "string" &&
+            document.cookie.indexOf("mt_session=1") !== -1;
+          var keys = Object.keys(localStorage);
+          var has =
+            cookieHas ||
+            localStorage.getItem("mytwitter:hasSession") === "1" ||
+            keys.some(function (k) {
+              return k.indexOf("mytwitter:member:") === 0;
+            });
+          if (has) {
+            document.documentElement.classList.add("has-session");
+            return true;
+          }
+        } catch (e) {
+          /* WebView localStorage is sometimes empty on the first tick */
+        }
+        return false;
+      };
+      if (!window.__mtApplySessionHint()) {
+        var tries = 0;
+        var timer = setInterval(function () {
+          tries += 1;
+          if (window.__mtApplySessionHint() || tries >= 40) clearInterval(timer);
+        }, 50);
+      }
+    </script>
   </head>
   <body>
     <div id="auth-gate" class="auth-gate hidden">
@@ -23,7 +83,9 @@
       </div>
     </div>
 
-    <div id="app-shell" class="hidden">
+    <p id="boot-splash" class="boot-splash hidden">Loading feed…</p>
+
+    <div id="app-shell">
       <header class="site-header">
         <div class="inner header-bar">
           <h1>MyTwitter</h1>
@@ -100,7 +162,11 @@
           aria-live="polite"
           hidden
         ></div>
-        <div id="feed" class="feed" role="feed" aria-busy="true"></div>
+        <div id="feed" class="feed" role="feed" aria-busy="true">
+          <div class="card card-skeleton" aria-hidden="true"></div>
+          <div class="card card-skeleton" aria-hidden="true"></div>
+          <div class="card card-skeleton" aria-hidden="true"></div>
+        </div>
         <p id="empty" class="empty hidden">
           No posts yet. Sync runs about every 10 minutes after you connect.
           Pull down to sync now.
@@ -113,7 +179,7 @@
       if ("serviceWorker" in navigator && navigator.onLine !== false) {
         caches.keys().then((keys) => {
           const stale = keys.filter(
-            (k) => k.startsWith("mytwitter-shell-") && k !== "mytwitter-shell-v6"
+            (k) => k.startsWith("mytwitter-shell-") && k !== "mytwitter-shell-v8"
           );
           if (!stale.length) return;
           Promise.all(stale.map((k) => caches.delete(k))).then(() =>
@@ -126,7 +192,7 @@
       }
     </script>
     <script src="/firebase-config.js"></script>
-    <script type="module" src="/app.js?v=0.1.7"></script>
+    <script type="module" src="/app.js?v=0.1.8"></script>
     <div id="author-card" class="author-card hidden" role="dialog" aria-label="Account" aria-modal="true">
       <div class="author-card-top">
         <img id="author-card-avatar" class="author-card-avatar" alt="" width="64" height="64" referrerpolicy="no-referrer" />

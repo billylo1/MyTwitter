@@ -21,10 +21,15 @@ import {
   deleteDoc,
   serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
-import {
-  getFunctions,
-  httpsCallable,
-} from "https://www.gstatic.com/firebasejs/11.6.0/firebase-functions.js";
+const BOOT_T0 =
+  typeof window !== "undefined" && typeof window.__mtBoot === "number"
+    ? window.__mtBoot
+    : performance.now();
+
+function bootMark(name, extra) {
+  const ms = Math.round(performance.now() - BOOT_T0);
+  console.log(`[boot] ${ms}ms ${name}${extra ? ` ${extra}` : ""}`);
+}
 
 const firebaseConfig = window.FIREBASE_CONFIG;
 if (!firebaseConfig?.projectId || firebaseConfig.projectId === "YOUR_PROJECT_ID") {
@@ -35,6 +40,7 @@ if (!firebaseConfig?.projectId || firebaseConfig.projectId === "YOUR_PROJECT_ID"
 
 const START_X_AUTH = `${location.origin}/oauth/start`;
 
+bootMark("sdk-init-start");
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = initializeFirestore(app, {
@@ -42,7 +48,21 @@ const db = initializeFirestore(app, {
     tabManager: persistentMultipleTabManager(),
   }),
 });
-const functions = getFunctions(app, "us-central1");
+bootMark("sdk-init-done");
+
+let functionsApi = null;
+async function callable(name) {
+  if (!functionsApi) {
+    const mod = await import(
+      "https://www.gstatic.com/firebasejs/11.6.0/firebase-functions.js"
+    );
+    functionsApi = {
+      httpsCallable: mod.httpsCallable,
+      functions: mod.getFunctions(app, "us-central1"),
+    };
+  }
+  return functionsApi.httpsCallable(functionsApi.functions, name);
+}
 
 const authGateEl = document.getElementById("auth-gate");
 const appShellEl = document.getElementById("app-shell");
@@ -65,7 +85,38 @@ const appVersionEl = document.getElementById("app-version");
 const ptrIndicatorEl = document.getElementById("ptr-indicator");
 
 /** Web SPA build label (bump when shipping Hosting). Native apps override via bridge. */
-const APP_VERSION = "0.1.7";
+const APP_VERSION = "0.1.8";
+const SESSION_HINT_KEY = "mytwitter:hasSession";
+const FIRST_PAINT_CARDS = 8;
+const FEED_CHUNK = 12;
+
+const bootSplashEl = document.getElementById("boot-splash");
+
+function hideBootSplash() {
+  bootSplashEl?.classList.add("hidden");
+}
+
+function setSessionHint(on) {
+  document.documentElement.classList.toggle("has-session", on);
+  try {
+    document.cookie = on
+      ? "mt_session=1; Path=/"
+      : "mt_session=; Path=/; Max-Age=0";
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (on) localStorage.setItem(SESSION_HINT_KEY, "1");
+    else localStorage.removeItem(SESSION_HINT_KEY);
+  } catch {
+    /* ignore quota / private mode */
+  }
+  try {
+    window.MyTwitterNative?.setHasSession?.(on);
+  } catch {
+    /* native bridge optional */
+  }
+}
 
 let feedUnsub = null;
 let likesUnsub = null;
@@ -297,9 +348,9 @@ function renderMediaItem(item) {
     const src = escapeHtml(item.videoUrl);
     const posterAttr = poster ? ` poster="${escapeHtml(poster)}"` : "";
     if (type === "animated_gif") {
-      return `<video class="media-gif" data-src="${src}"${posterAttr} autoplay muted loop playsinline></video>`;
+      return `<video class="media-gif" data-src="${src}"${posterAttr} muted loop playsinline preload="none"></video>`;
     }
-    return `<video class="media-video" data-src="${src}"${posterAttr} muted playsinline controls preload="metadata" controlslist="nodownload"></video>`;
+    return `<video class="media-video" data-src="${src}"${posterAttr} muted playsinline controls preload="none" controlslist="nodownload"></video>`;
   }
   if (!poster) return "";
   return `<img src="${escapeHtml(poster)}" alt="${alt}" loading="lazy" referrerpolicy="no-referrer" />`;
@@ -439,14 +490,7 @@ function renderPost(id, data) {
 function createPostElement(id, data) {
   const wrap = document.createElement("div");
   wrap.innerHTML = renderPost(id, data).trim();
-  const el = wrap.firstElementChild;
-  for (const video of el.querySelectorAll("video[data-src]")) {
-    video.referrerPolicy = "no-referrer";
-    video.src = video.dataset.src;
-    video.removeAttribute("data-src");
-  }
-  bindAuthorHover(el);
-  return el;
+  return wrap.firstElementChild;
 }
 
 const authorCardEl = document.getElementById("author-card");
@@ -557,7 +601,7 @@ async function loadAuthorCard(seed, trigger) {
   }
   renderAuthorCard({ ...seed, description: "" }, { pending: true });
   try {
-    const getAuthorCard = httpsCallable(functions, "getAuthorCard");
+    const getAuthorCard = await callable("getAuthorCard");
     const result = await getAuthorCard({
       userId: seed.id || undefined,
       handle: seed.handle || undefined,
@@ -610,19 +654,12 @@ async function openAuthorCard(trigger) {
   placeAuthorCard(trigger);
 }
 
-function bindAuthorHover(el) {
-  for (const trigger of el.querySelectorAll(".author-hover")) {
-    if (finePointer) {
-      trigger.addEventListener("mouseenter", () => scheduleAuthorShow(trigger));
-      trigger.addEventListener("mouseleave", scheduleAuthorHide);
-    }
-    trigger.addEventListener("click", (event) => {
-      if (event.target.closest("a")) return;
-      event.preventDefault();
-      event.stopPropagation();
-      void openAuthorCard(trigger);
-    });
-  }
+function hydrateVideoSrc(video) {
+  const pending = video.getAttribute("data-src");
+  if (!pending) return;
+  video.referrerPolicy = "no-referrer";
+  video.src = pending;
+  video.removeAttribute("data-src");
 }
 
 const videoObserver = new IntersectionObserver(
@@ -631,17 +668,20 @@ const videoObserver = new IntersectionObserver(
       const video = entry.target;
       if (!(video instanceof HTMLVideoElement)) continue;
       if (entry.isIntersecting) {
-        video.play().catch(() => {});
+        hydrateVideoSrc(video);
+        if (video.classList.contains("media-gif")) {
+          video.play().catch(() => {});
+        }
       } else {
         video.pause();
       }
     }
   },
-  { threshold: 0.55 }
+  { rootMargin: "240px 0px", threshold: 0.01 }
 );
 
 function watchCardVideos(el) {
-  for (const video of el.querySelectorAll("video.media-video")) {
+  for (const video of el.querySelectorAll("video")) {
     videoObserver.observe(video);
   }
 }
@@ -832,7 +872,7 @@ async function openTweetById(tweetId) {
     const postSnap = await getDoc(doc(db, "users", auth.currentUser.uid, "posts", id));
     let data = postSnap.exists() ? postSnap.data() : null;
     if (!data) {
-      const getTweet = httpsCallable(functions, "getTweet");
+      const getTweet = await callable("getTweet");
       const result = await getTweet({ tweetId: id });
       data = result.data?.post || null;
     }
@@ -843,12 +883,16 @@ async function openTweetById(tweetId) {
     if (tweetDialogBody && tweetDialogEl) {
       const el = createPostElement(id, data);
       el.querySelector(".card-hit")?.remove();
+      watchCardVideos(el);
+      for (const video of el.querySelectorAll("video")) hydrateVideoSrc(video);
       tweetDialogBody.innerHTML = "";
       tweetDialogBody.appendChild(el);
       if (!tweetDialogEl.open) tweetDialogEl.showModal();
       statusEl.textContent = "Post loaded.";
     } else {
-      highlightCard(createPostElement(id, data));
+      const el = createPostElement(id, data);
+      watchCardVideos(el);
+      highlightCard(el);
     }
   } catch (err) {
     console.error(err);
@@ -881,7 +925,7 @@ window.MyTwitterOpenTweet = function MyTwitterOpenTweet(tweetIdOrUrl) {
   }
   void (async () => {
     try {
-      const resolveTweetUrl = httpsCallable(functions, "resolveTweetUrl");
+      const resolveTweetUrl = await callable("resolveTweetUrl");
       const result = await resolveTweetUrl({ url: raw });
       const tweetId = result.data?.tweetId;
       if (tweetId) await openTweetById(tweetId);
@@ -969,7 +1013,7 @@ async function registerNativeDeviceIfPresent() {
       console.warn("[push] no FCM token from native", payload);
       return false;
     }
-    const registerDevice = httpsCallable(functions, "registerDevice");
+    const registerDevice = await callable("registerDevice");
     await registerDevice({ token, platform });
     console.info("[push] device registered", platform, token.slice(0, 12) + "…");
     return true;
@@ -1006,6 +1050,17 @@ function maybeOfferPushPrompt({ reason } = {}) {
 
   if (reason === "hasFavorites" && favoritedIds.size === 0) return;
   if (reason !== "hasFavorites" && reason !== "favoriteAdded") return;
+
+  // Don't cover the first feed paint on cold start.
+  if (reason === "hasFavorites") {
+    window.setTimeout(() => {
+      if (!auth.currentUser || dialog.open) return;
+      if (isPushPromptDeclined()) return;
+      if (favoritedIds.size === 0) return;
+      dialog.showModal();
+    }, 8000);
+    return;
+  }
 
   dialog.showModal();
 }
@@ -1061,7 +1116,7 @@ async function toggleLike(card, btn) {
   setLikeButtonState(btn, nextLiked);
   btn.disabled = true;
   try {
-    const setLiked = httpsCallable(functions, "setLiked");
+    const setLiked = await callable("setLiked");
     await setLiked({ tweetId, like: nextLiked });
     if (nextLiked) likedIds.add(tweetId);
     else likedIds.delete(tweetId);
@@ -1149,7 +1204,7 @@ async function sharePost(card, btn) {
   }
 }
 
-function subscribeFeed(uid) {
+function subscribeFeed(uid, { onFirstPaint } = {}) {
   if (feedUnsub) {
     feedUnsub();
     feedUnsub = null;
@@ -1165,6 +1220,44 @@ function subscribeFeed(uid) {
   /** @type {Map<string, HTMLElement>} */
   const cards = new Map();
   let feedPrimed = false;
+  let firstPaintDone = false;
+  let paintGen = 0;
+  let restRaf = 0;
+
+  function notifyFirstPaint() {
+    if (firstPaintDone) return;
+    firstPaintDone = true;
+    onFirstPaint?.();
+  }
+
+  function cancelRestPaint() {
+    if (restRaf) {
+      window.cancelAnimationFrame(restRaf);
+      restRaf = 0;
+    }
+    paintGen += 1;
+  }
+
+  function mountCard(id, data) {
+    const next = createPostElement(id, data);
+    watchCardVideos(next);
+    cards.set(id, next);
+    return next;
+  }
+
+  function reorderCards(snap) {
+    let previous = null;
+    for (const d of snap.docs) {
+      const el = cards.get(d.id);
+      if (!el) continue;
+      if (previous) {
+        if (previous.nextElementSibling !== el) previous.after(el);
+      } else if (feedEl.firstElementChild !== el) {
+        feedEl.prepend(el);
+      }
+      previous = el;
+    }
+  }
 
   function primeFeedDom() {
     if (feedPrimed) return;
@@ -1187,7 +1280,68 @@ function subscribeFeed(uid) {
     }
   }
 
+  function paintImmediate(docs) {
+    const frag = document.createDocumentFragment();
+    for (const d of docs) {
+      frag.appendChild(mountCard(d.id, d.data()));
+    }
+    feedEl.appendChild(frag);
+  }
+
+  function scheduleRest(docs, gen) {
+    const flush = (start) => {
+      if (gen !== paintGen) return;
+      const end = Math.min(start + FEED_CHUNK, docs.length);
+      const frag = document.createDocumentFragment();
+      for (let i = start; i < end; i++) {
+        const d = docs[i];
+        if (cards.has(d.id)) continue;
+        frag.appendChild(mountCard(d.id, d.data()));
+      }
+      if (frag.childNodes.length) feedEl.appendChild(frag);
+      if (end < docs.length) {
+        restRaf = window.requestAnimationFrame(() => flush(end));
+      } else {
+        bootMark("feed-complete", `${docs.length} cards`);
+      }
+    };
+    restRaf = window.requestAnimationFrame(() => flush(0));
+  }
+
+  function applyIncremental(snap) {
+    for (const change of snap.docChanges()) {
+      const id = change.doc.id;
+
+      if (change.type === "removed") {
+        const gone = cards.get(id);
+        if (gone) {
+          unwatchCardVideos(gone);
+          gone.remove();
+        }
+        cards.delete(id);
+        continue;
+      }
+
+      const prev = cards.get(id);
+      const next = createPostElement(id, change.doc.data());
+      watchCardVideos(next);
+      if (prev) {
+        unwatchCardVideos(prev);
+        prev.replaceWith(next);
+      }
+      cards.set(id, next);
+    }
+
+    for (const d of snap.docs) {
+      if (!cards.has(d.id)) mountCard(d.id, d.data());
+    }
+
+    reorderCards(snap);
+  }
+
   function applyFeedSnapshot(snap) {
+    const first = !feedPrimed;
+    cancelRestPaint();
     primeFeedDom();
     feedEl.setAttribute("aria-busy", "false");
 
@@ -1202,46 +1356,27 @@ function subscribeFeed(uid) {
       }
       cards.clear();
       syncEmptyState(true, { offline });
+      notifyFirstPaint();
+      bootMark("feed-empty", offline ? "cache" : "server");
       return;
     }
 
     syncEmptyState(false);
 
-    for (const change of snap.docChanges()) {
-      const id = change.doc.id;
-
-      if (change.type === "removed") {
-        const gone = cards.get(id);
-        if (gone) {
-          unwatchCardVideos(gone);
-          gone.remove();
-        }
-        cards.delete(id);
-        continue;
-      }
-
-      const data = change.doc.data();
-      const next = createPostElement(id, data);
-      const prev = cards.get(id);
-
-      if (prev) {
-        unwatchCardVideos(prev);
-        prev.replaceWith(next);
-      }
-      watchCardVideos(next);
-      cards.set(id, next);
-    }
-
-    let previous = null;
-    for (const d of snap.docs) {
-      const el = cards.get(d.id);
-      if (!el) continue;
-      if (previous) {
-        if (previous.nextElementSibling !== el) previous.after(el);
-      } else if (feedEl.firstElementChild !== el) {
-        feedEl.prepend(el);
-      }
-      previous = el;
+    if (first) {
+      const docs = snap.docs;
+      const immediate = docs.slice(0, FIRST_PAINT_CARDS);
+      const rest = docs.slice(FIRST_PAINT_CARDS);
+      paintImmediate(immediate);
+      bootMark(
+        "feed-visible",
+        `${immediate.length}/${docs.length} ${offline ? "cache" : "server"}`
+      );
+      notifyFirstPaint();
+      if (rest.length) scheduleRest(rest, paintGen);
+      else bootMark("feed-complete", `${docs.length} cards`);
+    } else {
+      applyIncremental(snap);
     }
 
     statusEl.textContent = `${snap.size} recent posts · ${offline ? "offline" : "live"}`;
@@ -1251,9 +1386,10 @@ function subscribeFeed(uid) {
     console.error(err);
     feedEl.setAttribute("aria-busy", "false");
     const hasCards =
-      cards.size > 0 || Boolean(feedEl.querySelector(".card"));
+      cards.size > 0 || Boolean(feedEl.querySelector(".card:not(.card-skeleton)"));
     if (hasCards) {
       statusEl.textContent = `Offline · showing cached posts`;
+      notifyFirstPaint();
       return;
     }
     statusEl.textContent = `Could not load feed: ${err.message}`;
@@ -1289,7 +1425,7 @@ async function runManualSync() {
   setPtrIndicator("Syncing…", { syncing: true });
   statusEl.textContent = "Syncing with X…";
   try {
-    const syncMyTimeline = httpsCallable(functions, "syncMyTimeline");
+    const syncMyTimeline = await callable("syncMyTimeline");
     const { data } = await syncMyTimeline({});
     const written = Number(data?.written ?? 0);
     const msg =
@@ -1390,6 +1526,8 @@ function startAuthUrl() {
 }
 
 function showAuthGate(message) {
+  setSessionHint(false);
+  hideBootSplash();
   appShellEl.classList.add("hidden");
   authGateEl.classList.remove("hidden");
   if (message) authMessageEl.textContent = message;
@@ -1498,18 +1636,18 @@ async function loadMemberSnapshot(uid) {
 }
 
 function startFeedSession(user, { status } = {}) {
-  subscribePublicConfig();
   if (status) statusEl.textContent = status;
-  subscribeLikes(user.uid);
-  subscribeFavorites(user.uid);
-  subscribeFeed(user.uid);
+  subscribeFeed(user.uid, {
+    onFirstPaint() {
+      bootMark("side-listeners");
+      subscribePublicConfig();
+      subscribeLikes(user.uid);
+      subscribeFavorites(user.uid);
+    },
+  });
 }
 
-async function enterApp(user) {
-  authGateEl.classList.add("hidden");
-  appShellEl.classList.remove("hidden");
-  authErrorEl.classList.add("hidden");
-
+async function refreshMembership(user) {
   const memberSnap = await loadMemberSnapshot(user.uid);
   let memberData = null;
 
@@ -1517,8 +1655,6 @@ async function enterApp(user) {
     memberData = { id: memberSnap.id, ...memberSnap.data() };
     saveMemberLocal(user.uid, memberData);
   } else if (memberSnap && (!memberSnap.exists() || memberSnap.data()?.enabled === false)) {
-    // Only treat as "not invited" when Firestore confirms from the server.
-    // fromCache / failed fetches are ambiguous (common offline WebView case).
     const fromServer =
       memberSnap.metadata && memberSnap.metadata.fromCache === false;
     if (fromServer) {
@@ -1536,19 +1672,25 @@ async function enterApp(user) {
     memberData = readMemberLocal(user.uid);
   }
 
-  if (!memberData) {
-    // Signed in but membership unknown (offline / cache miss) — show feed anyway.
-    currentMember = null;
-    whoamiEl.textContent = "Offline";
-    updateAdminPanel();
-    startFeedSession(user, {
-      status: "Offline — reconnect to verify membership",
-    });
-    return;
-  }
+  if (!memberData) return;
 
   currentMember = memberData;
   whoamiEl.textContent = `@${currentMember.handle || user.uid}`;
+  updateAdminPanel();
+}
+
+async function enterApp(user) {
+  bootMark("enterApp");
+  setSessionHint(true);
+  hideBootSplash();
+  authGateEl.classList.add("hidden");
+  appShellEl.classList.remove("hidden");
+  authErrorEl.classList.add("hidden");
+
+  currentMember = readMemberLocal(user.uid);
+  whoamiEl.textContent = currentMember?.handle
+    ? `@${currentMember.handle}`
+    : "";
   updateAdminPanel();
 
   const params = new URLSearchParams(location.search);
@@ -1562,6 +1704,7 @@ async function enterApp(user) {
   startFeedSession(user, {
     status: offline ? "Offline · cached session" : "Connecting…",
   });
+  void refreshMembership(user);
   if (shouldRefreshPushRegistration()) {
     void ensureNativeDeviceRegistered();
   }
@@ -1638,7 +1781,7 @@ function wireUi() {
       const nextFollow = !current.following;
       authorCardFollow.disabled = true;
       try {
-        const setFollowing = httpsCallable(functions, "setFollowing");
+        const setFollowing = await callable("setFollowing");
         await setFollowing({ userId: current.id, follow: nextFollow });
         const updated = { ...current, following: nextFollow, error: "" };
         authorCardCache.set(
@@ -1690,6 +1833,15 @@ function wireUi() {
       return;
     }
 
+    const authorHover = event.target.closest(".author-hover");
+    if (authorHover && feedEl.contains(authorHover)) {
+      if (event.target.closest("a")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void openAuthorCard(authorHover);
+      return;
+    }
+
     // Card body opens X; skip controls / author / links / video.
     if (
       event.target.closest(
@@ -1705,6 +1857,18 @@ function wireUi() {
     location.assign(url);
   });
 
+  if (finePointer) {
+    feedEl.addEventListener("mouseover", (event) => {
+      const trigger = event.target.closest(".author-hover");
+      if (trigger && feedEl.contains(trigger)) scheduleAuthorShow(trigger);
+    });
+    feedEl.addEventListener("mouseout", (event) => {
+      const trigger = event.target.closest(".author-hover");
+      if (!trigger || trigger.contains(event.relatedTarget)) return;
+      scheduleAuthorHide();
+    });
+  }
+
   feedEl.addEventListener(
     "play",
     (event) => {
@@ -1719,7 +1883,7 @@ function wireUi() {
   createInviteBtn?.addEventListener("click", async () => {
     inviteResultEl.textContent = "Creating…";
     try {
-      const createInvite = httpsCallable(functions, "createInvite");
+      const createInvite = await callable("createInvite");
       const result = await createInvite({ maxUses: 5, days: 14 });
       const data = result.data;
       inviteResultEl.textContent = data.url;
@@ -1737,15 +1901,11 @@ function wireUi() {
 }
 
 async function boot() {
+  bootMark("boot");
   wireUi();
-  try {
-    await consumeAuthParams();
-  } catch (err) {
-    console.error(err);
-    showAuthError("oauth_failed");
-  }
 
   onAuthStateChanged(auth, async (user) => {
+    bootMark("auth", user ? "in" : "out");
     if (!user) {
       if (feedUnsub) {
         feedUnsub();
@@ -1778,8 +1938,8 @@ async function boot() {
       await enterApp(user);
     } catch (err) {
       console.error(err);
-      // Keep a signed-in session in the app even if membership fetch throws
-      // (WebView often reports online while airplane mode blocks Firestore).
+      setSessionHint(true);
+      hideBootSplash();
       currentMember = readMemberLocal(user.uid);
       authGateEl.classList.add("hidden");
       appShellEl.classList.remove("hidden");
@@ -1793,14 +1953,20 @@ async function boot() {
         });
       } catch (feedErr) {
         console.error(feedErr);
-        // Last resort: stay on the shell with a status line, never the auth gate
-        // for an already-signed-in session.
         authGateEl.classList.add("hidden");
         appShellEl.classList.remove("hidden");
         statusEl.textContent = "Offline — reconnect to load your feed";
       }
     }
   });
+
+  try {
+    await consumeAuthParams();
+    bootMark("auth-params");
+  } catch (err) {
+    console.error(err);
+    showAuthError("oauth_failed");
+  }
 }
 
 boot();

@@ -6,6 +6,7 @@ import FirebaseMessaging
 
 final class PushService: NSObject {
     static let shared = PushService()
+    private static let prefAuthorized = "notificationsAuthorized"
 
     private let log = Logger(subsystem: "org.evergreenlabs.mytwitter", category: "Push")
     var tweetOpener: ((String) -> Void)?
@@ -17,6 +18,7 @@ final class PushService: NSObject {
     func configure() {
         UNUserNotificationCenter.current().delegate = self
         Messaging.messaging().delegate = self
+        refreshNotificationsAuthorized()
     }
 
     func requestPermissionAndRegister() {
@@ -25,9 +27,30 @@ final class PushService: NSObject {
                 self.log.error("notification permission error: \(error.localizedDescription, privacy: .public)")
             }
             self.log.info("notification permission granted=\(granted)")
+            UserDefaults.standard.set(granted, forKey: Self.prefAuthorized)
             DispatchQueue.main.async {
                 UIApplication.shared.registerForRemoteNotifications()
             }
+        }
+    }
+
+    func cachedNotificationsAuthorized() -> Bool {
+        UserDefaults.standard.bool(forKey: Self.prefAuthorized)
+    }
+
+    func refreshNotificationsAuthorized(completion: ((Bool) -> Void)? = nil) {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            let ok: Bool
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral:
+                ok = true
+            case .notDetermined, .denied:
+                ok = false
+            @unknown default:
+                ok = false
+            }
+            UserDefaults.standard.set(ok, forKey: Self.prefAuthorized)
+            completion?(ok)
         }
     }
 

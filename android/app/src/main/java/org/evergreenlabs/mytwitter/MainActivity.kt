@@ -28,6 +28,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -86,7 +87,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val notificationPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* no-op */ }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted && ::webView.isInitialized) {
+                webView.evaluateJavascript(
+                    "if (window.MyTwitterNative) window.MyTwitterNative.notificationsAuthorized = true;",
+                    null,
+                )
+            }
+        }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -237,6 +245,16 @@ class MainActivity : AppCompatActivity() {
             openTweetById(tweetId)
             intent?.removeExtra(EXTRA_TWEET_ID)
         }
+    }
+
+    private fun hasNotificationPermission(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED
+        }
+        return NotificationManagerCompat.from(this).areNotificationsEnabled()
     }
 
     private fun maybeRequestNotificationPermission() {
@@ -483,6 +501,7 @@ class MainActivity : AppCompatActivity() {
                 platform: 'android',
                 versionName: ${BuildConfig.VERSION_NAME.let { "'$it'" }},
                 versionCode: ${BuildConfig.VERSION_CODE},
+                notificationsAuthorized: ${hasNotificationPermission()},
                 postMessage: function(msg) {
                   try {
                     MyTwitterNativeBridge.postMessage(typeof msg === 'string' ? msg : JSON.stringify(msg));

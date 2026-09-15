@@ -91,7 +91,7 @@ const appVersionEl = document.getElementById("app-version");
 const ptrIndicatorEl = document.getElementById("ptr-indicator");
 
 /** Web SPA build label (bump when shipping Hosting). Native apps override via bridge. */
-const APP_VERSION = "0.1.9";
+const APP_VERSION = "0.1.10";
 const SESSION_HINT_KEY = "mytwitter:hasSession";
 const LAST_UID_KEY = "mytwitter:lastUid";
 const FEED_CACHE_KEY = "mytwitter:feedCache:v1";
@@ -1052,12 +1052,23 @@ function notificationPermissionState() {
   return Notification.permission;
 }
 
+function nativeNotificationsAuthorized() {
+  return window.MyTwitterNative?.notificationsAuthorized === true;
+}
+
 function isPushOptedIn() {
   try {
     return localStorage.getItem(PUSH_OPT_IN_KEY) === "1";
   } catch {
     return false;
   }
+}
+
+/** WebView Notification.permission does not mirror Android/iOS OS grants. */
+function pushAlreadyEnabled() {
+  if (notificationPermissionState() === "granted") return true;
+  if (nativeNotificationsAuthorized()) return true;
+  return isPushOptedIn();
 }
 
 function setPushOptIn(enabled) {
@@ -1088,8 +1099,7 @@ function setPushPromptDeclined(declined) {
 
 function shouldRefreshPushRegistration() {
   if (!hasNativePushBridge() || !auth.currentUser) return false;
-  if (notificationPermissionState() === "granted") return true;
-  return isPushOptedIn();
+  return pushAlreadyEnabled();
 }
 
 async function registerNativeDeviceIfPresent() {
@@ -1112,6 +1122,10 @@ async function registerNativeDeviceIfPresent() {
     }
     const registerDevice = await callable("registerDevice");
     await registerDevice({ token, platform });
+    if (window.MyTwitterNative) {
+      window.MyTwitterNative.notificationsAuthorized = true;
+    }
+    setPushOptIn(true);
     console.info("[push] device registered", platform, token.slice(0, 12) + "…");
     return true;
   } catch (err) {
@@ -1132,13 +1146,12 @@ async function ensureNativeDeviceRegistered({ attempts = 8, delayMs = 750 } = {}
 function maybeOfferPushPrompt({ reason } = {}) {
   if (!hasNativePushBridge() || !auth.currentUser) return;
 
-  const perm = notificationPermissionState();
-  if (perm === "granted") {
+  if (pushAlreadyEnabled()) {
     setPushOptIn(true);
     void ensureNativeDeviceRegistered();
     return;
   }
-  if (perm === "denied") return;
+  if (notificationPermissionState() === "denied") return;
 
   const dialog = document.getElementById("push-prompt-dialog");
   if (!dialog || dialog.open) return;
@@ -1148,18 +1161,26 @@ function maybeOfferPushPrompt({ reason } = {}) {
   if (reason === "hasFavorites" && favoritedIds.size === 0) return;
   if (reason !== "hasFavorites" && reason !== "favoriteAdded") return;
 
+  const showIfStillNeeded = () => {
+    if (!auth.currentUser || dialog.open) return;
+    if (pushAlreadyEnabled()) {
+      setPushOptIn(true);
+      void ensureNativeDeviceRegistered();
+      return;
+    }
+    if (notificationPermissionState() === "denied") return;
+    if (isPushPromptDeclined() && reason !== "favoriteAdded") return;
+    if (favoritedIds.size === 0) return;
+    dialog.showModal();
+  };
+
   // Don't cover the first feed paint on cold start.
   if (reason === "hasFavorites") {
-    window.setTimeout(() => {
-      if (!auth.currentUser || dialog.open) return;
-      if (isPushPromptDeclined()) return;
-      if (favoritedIds.size === 0) return;
-      dialog.showModal();
-    }, 8000);
+    window.setTimeout(showIfStillNeeded, 8000);
     return;
   }
 
-  dialog.showModal();
+  showIfStillNeeded();
 }
 
 function wirePushPromptDialog() {
@@ -1194,6 +1215,11 @@ function wirePushPromptDialog() {
 window.addEventListener("mytwitter:nativeReady", () => {
   if (shouldRefreshPushRegistration()) {
     void ensureNativeDeviceRegistered({ attempts: 4, delayMs: 500 });
+  }
+  const dialog = document.getElementById("push-prompt-dialog");
+  if (dialog?.open && pushAlreadyEnabled()) {
+    setPushOptIn(true);
+    dialog.close();
   }
 });
 

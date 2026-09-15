@@ -45,7 +45,7 @@ cd android
 | Feed / favorites | Same web SPA |
 | Sign in with X | Custom Tabs → `/oauth/start?client=android` → `mytwitter://auth?token=…` → WebView |
 | Status / t.co links | Intent filters; SPA `resolveTweetUrl` / `getTweet` / `?tweet=` |
-| Push | FCM when favorited accounts post (incremental sync); tap opens tweet. OS permission is **not** requested on cold start — the SPA shows a soft prompt once the user has favorites (or after they favorite someone), then calls `requestPushRegistration` |
+| Push | FCM when favorited accounts post (incremental sync); tap opens tweet. OS permission is **not** requested on cold start — the SPA shows a soft prompt once the user has favorites (or after they favorite someone), then calls `requestPushRegistration`. The prompt is skipped when OS permission is already granted (`MyTwitterNative.notificationsAuthorized`) or the user previously opted in |
 | Pull to refresh | SPA gesture calls `syncMyTimeline` (per-user sync; feed updates via Firestore) |
 | Native bridge | `window.MyTwitterNative` (`platform`, `requestPushRegistration`, `setHasSession`) |
 | Portrait notch | Root padding for status bar + display cutout |
@@ -133,7 +133,7 @@ xcodebuild -project MyTwitter.xcodeproj -scheme MyTwitter \
 | Sign in with X | `SFSafariViewController` → `/oauth/start?client=ios` → `mytwitter://auth?token=…` → WKWebView |
 | Status / t.co (in-app) | Navigation policy + `TweetUrlParser` / SPA `MyTwitterOpenTweet` |
 | Custom schemes | `mytwitter://auth`, `mytwitter://tweet`, `mytwitter://url` |
-| Push | FCM + APNs; tap opens tweet via `data.tweetId`. Same deferred soft-prompt flow as Android (favorites-gated; no cold-start OS dialog) |
+| Push | FCM + APNs; tap opens tweet via `data.tweetId`. Same deferred soft-prompt flow as Android (favorites-gated; no cold-start OS dialog). Native reports `notificationsAuthorized` so the prompt is not repeated after OS grant |
 | Pull to refresh | Same SPA gesture → `syncMyTimeline` |
 | Native bridge | `window.MyTwitterNative` (`platform: ios`, `requestPushRegistration`, `setHasSession`, version fields) |
 | Returning session | `UserDefaults` + `mt_session` cookie + at-document-start `has-session` class so chrome/skeletons (and cached posts from the SPA) paint before Auth restore |

@@ -125,7 +125,7 @@ final class MainViewController: UIViewController {
     }
 
     /// Bump when Hosting ships shell/JS fixes that must not stay stuck in WK HTTP cache.
-    private static let shellCacheEpoch = "0.1.9"
+    private static let shellCacheEpoch = "0.1.10"
 
     private func loadSite() {
         guard let url = URL(string: siteURL) else {
@@ -415,6 +415,7 @@ final class MainViewController: UIViewController {
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "'", with: "\\'")
         let versionCode = AppConfig.versionCode
+        let notificationsAuthorized = PushService.shared.cachedNotificationsAuthorized()
         let pending = pendingTweetOpen
         pendingTweetOpen = nil
         let pendingJS: String
@@ -435,6 +436,7 @@ final class MainViewController: UIViewController {
                 platform: 'ios',
                 versionName: '\(versionName)',
                 versionCode: \(versionCode),
+                notificationsAuthorized: \(notificationsAuthorized),
                 postMessage: function(msg) {
                   try {
                     window.webkit.messageHandlers.mytwitterNative.postMessage({
@@ -537,6 +539,14 @@ extension MainViewController: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         bootLog("onPageFinished \(webView.url?.absoluteString ?? "")")
         injectNativeBridge()
+        PushService.shared.refreshNotificationsAuthorized { [weak self] authorized in
+            guard authorized else { return }
+            DispatchQueue.main.async {
+                self?.evaluateJS(
+                    "if (window.MyTwitterNative) window.MyTwitterNative.notificationsAuthorized = true;"
+                )
+            }
+        }
     }
 
     func webView(

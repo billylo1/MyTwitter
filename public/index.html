@@ -73,6 +73,26 @@
         </div>
       </dialog>
 
+      <dialog id="push-prompt-dialog" class="info-dialog push-prompt-dialog" aria-labelledby="push-prompt-title">
+        <div class="info-dialog-header">
+          <h2 id="push-prompt-title">Notifications</h2>
+          <button type="button" id="push-prompt-close" class="info-close" aria-label="Close">
+            ×
+          </button>
+        </div>
+        <p class="info-line">
+          Get notified when people you favorite post?
+        </p>
+        <div class="push-prompt-actions">
+          <button type="button" id="push-prompt-enable" class="btn primary">
+            Enable notifications
+          </button>
+          <button type="button" id="push-prompt-later" class="btn">
+            Not now
+          </button>
+        </div>
+      </dialog>
+
       <main class="inner">
         <div
           id="ptr-indicator"
@@ -93,7 +113,7 @@
       if ("serviceWorker" in navigator && navigator.onLine !== false) {
         caches.keys().then((keys) => {
           const stale = keys.filter(
-            (k) => k.startsWith("mytwitter-shell-") && k !== "mytwitter-shell-v5"
+            (k) => k.startsWith("mytwitter-shell-") && k !== "mytwitter-shell-v6"
           );
           if (!stale.length) return;
           Promise.all(stale.map((k) => caches.delete(k))).then(() =>
@@ -106,7 +126,7 @@
       }
     </script>
     <script src="/firebase-config.js"></script>
-    <script type="module" src="/app.js?v=0.1.6"></script>
+    <script type="module" src="/app.js?v=0.1.7"></script>
     <div id="author-card" class="author-card hidden" role="dialog" aria-label="Account" aria-modal="true">
       <div class="author-card-top">
         <img id="author-card-avatar" class="author-card-avatar" alt="" width="64" height="64" referrerpolicy="no-referrer" />

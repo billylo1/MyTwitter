@@ -68,7 +68,8 @@ class MainActivity : AppCompatActivity() {
         }
         ViewCompat.requestApplyInsets(root)
 
-        maybeRequestNotificationPermission()
+        // OS notification permission is requested from the SPA soft prompt
+        // after the user has favorited authors (see public/app.js).
         ensureFavoritesChannel()
 
         webView.settings.apply {

@@ -1,6 +1,6 @@
 /* MyTwitter app-shell service worker — enables cold start offline after one online visit. */
-const CACHE = "mytwitter-shell-v5";
-const APP_JS = "/app.js?v=0.1.6";
+const CACHE = "mytwitter-shell-v6";
+const APP_JS = "/app.js?v=0.1.7";
 
 const PRECACHE = [
   "/",

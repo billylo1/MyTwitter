@@ -65,7 +65,7 @@ const appVersionEl = document.getElementById("app-version");
 const ptrIndicatorEl = document.getElementById("ptr-indicator");
 
 /** Web SPA build label (bump when shipping Hosting). Native apps override via bridge. */
-const APP_VERSION = "0.1.6";
+const APP_VERSION = "0.1.7";
 
 let feedUnsub = null;
 let likesUnsub = null;
@@ -713,6 +713,8 @@ function syncFavoriteMarks() {
   }
 }
 
+let favoritesPromptChecked = false;
+
 function subscribeFavorites(uid) {
   if (favoritesUnsub) {
     favoritesUnsub();
@@ -720,6 +722,7 @@ function subscribeFavorites(uid) {
   }
   favoritedIds = new Set();
   favoriteMeta.clear();
+  favoritesPromptChecked = false;
   favoritesUnsub = onSnapshot(
     collection(db, "users", uid, "favorites"),
     (snap) => {
@@ -729,6 +732,12 @@ function subscribeFavorites(uid) {
         favoriteMeta.set(d.id, d.data() || {});
       }
       syncFavoriteMarks();
+      if (!favoritesPromptChecked) {
+        favoritesPromptChecked = true;
+        if (favoritedIds.size > 0) {
+          void maybeOfferPushPrompt({ reason: "hasFavorites" });
+        }
+      }
     },
     (err) => {
       console.error(err);
@@ -765,6 +774,9 @@ async function toggleFavorite(author) {
     authorCardCache.set(authorCacheKey(updated.handle, updated.id), updated);
     renderAuthorCard(updated);
     syncFavoriteMarks();
+    if (next) {
+      void maybeOfferPushPrompt({ reason: "favoriteAdded" });
+    }
   } catch (err) {
     console.error(err);
     if (authorCardFavorite) {
@@ -887,6 +899,58 @@ window.addEventListener("mytwitter:openTweet", (event) => {
   if (id) window.MyTwitterOpenTweet(id);
 });
 
+const PUSH_DECLINED_KEY = "mytwitter:pushPromptDeclined";
+const PUSH_OPT_IN_KEY = "mytwitter:pushOptIn";
+
+function hasNativePushBridge() {
+  return typeof window.MyTwitterNative?.requestPushRegistration === "function";
+}
+
+function notificationPermissionState() {
+  if (typeof Notification === "undefined") return "unsupported";
+  return Notification.permission;
+}
+
+function isPushOptedIn() {
+  try {
+    return localStorage.getItem(PUSH_OPT_IN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function setPushOptIn(enabled) {
+  try {
+    if (enabled) localStorage.setItem(PUSH_OPT_IN_KEY, "1");
+    else localStorage.removeItem(PUSH_OPT_IN_KEY);
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function isPushPromptDeclined() {
+  try {
+    return localStorage.getItem(PUSH_DECLINED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function setPushPromptDeclined(declined) {
+  try {
+    if (declined) localStorage.setItem(PUSH_DECLINED_KEY, "1");
+    else localStorage.removeItem(PUSH_DECLINED_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+function shouldRefreshPushRegistration() {
+  if (!hasNativePushBridge() || !auth.currentUser) return false;
+  if (notificationPermissionState() === "granted") return true;
+  return isPushOptedIn();
+}
+
 async function registerNativeDeviceIfPresent() {
   const native = window.MyTwitterNative;
   if (!native || typeof native.requestPushRegistration !== "function") {
@@ -924,12 +988,68 @@ async function ensureNativeDeviceRegistered({ attempts = 8, delayMs = 750 } = {}
   return false;
 }
 
+function maybeOfferPushPrompt({ reason } = {}) {
+  if (!hasNativePushBridge() || !auth.currentUser) return;
+
+  const perm = notificationPermissionState();
+  if (perm === "granted") {
+    setPushOptIn(true);
+    void ensureNativeDeviceRegistered();
+    return;
+  }
+  if (perm === "denied") return;
+
+  const dialog = document.getElementById("push-prompt-dialog");
+  if (!dialog || dialog.open) return;
+
+  if (isPushPromptDeclined() && reason !== "favoriteAdded") return;
+
+  if (reason === "hasFavorites" && favoritedIds.size === 0) return;
+  if (reason !== "hasFavorites" && reason !== "favoriteAdded") return;
+
+  dialog.showModal();
+}
+
+function wirePushPromptDialog() {
+  const dialog = document.getElementById("push-prompt-dialog");
+  const enableBtn = document.getElementById("push-prompt-enable");
+  const laterBtn = document.getElementById("push-prompt-later");
+  const closeBtn = document.getElementById("push-prompt-close");
+  if (!dialog || !enableBtn || !laterBtn) return;
+
+  const decline = () => {
+    setPushPromptDeclined(true);
+    dialog.close();
+  };
+
+  enableBtn.addEventListener("click", () => {
+    setPushPromptDeclined(false);
+    setPushOptIn(true);
+    dialog.close();
+    void ensureNativeDeviceRegistered();
+  });
+  laterBtn.addEventListener("click", decline);
+  closeBtn?.addEventListener("click", decline);
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) decline();
+  });
+  dialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    decline();
+  });
+}
+
 window.addEventListener("mytwitter:nativeReady", () => {
-  if (auth.currentUser) void ensureNativeDeviceRegistered({ attempts: 4, delayMs: 500 });
+  if (shouldRefreshPushRegistration()) {
+    void ensureNativeDeviceRegistered({ attempts: 4, delayMs: 500 });
+  }
 });
 
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && auth.currentUser) {
+  if (
+    document.visibilityState === "visible" &&
+    shouldRefreshPushRegistration()
+  ) {
     void registerNativeDeviceIfPresent();
   }
 });
@@ -1442,7 +1562,9 @@ async function enterApp(user) {
   startFeedSession(user, {
     status: offline ? "Offline · cached session" : "Connecting…",
   });
-  void ensureNativeDeviceRegistered();
+  if (shouldRefreshPushRegistration()) {
+    void ensureNativeDeviceRegistered();
+  }
   window.setTimeout(() => {
     void flushPendingTweet();
   }, 500);
@@ -1452,6 +1574,7 @@ function wireUi() {
   renderAppVersion();
   window.addEventListener("mytwitter:nativeReady", () => renderAppVersion());
   wirePullToRefresh();
+  wirePushPromptDialog();
 
   const dialog = document.getElementById("info-dialog");
   const openBtn = document.getElementById("info-open");

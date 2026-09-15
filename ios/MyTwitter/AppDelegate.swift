@@ -15,10 +15,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         configureSentry()
         FirebaseApp.configure()
         PushService.shared.configure()
-        // Defer permission prompt until the WebView has a chance to load SITE_URL.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            PushService.shared.requestPermissionAndRegister()
-        }
+        // OS notification permission is requested from the SPA soft prompt
+        // after the user has favorited authors (see public/app.js).
 
         if let remote = launchOptions?[.remoteNotification] as? [AnyHashable: Any] {
             PushService.shared.handleNotificationUserInfo(remote)

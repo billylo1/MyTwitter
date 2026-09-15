@@ -247,6 +247,21 @@ body {
   outline: none;
 }
 
+.push-prompt-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-top: 1rem;
+}
+
+.push-prompt-actions .btn {
+  width: 100%;
+}
+
+.push-prompt-actions .btn:not(.primary) {
+  background: transparent;
+}
+
 .info-line {
   margin: 0 0 0.65rem;
   color: var(--text);

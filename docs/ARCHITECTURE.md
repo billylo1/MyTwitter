@@ -144,7 +144,7 @@ Rules: [`firestore.rules`](../firestore.rules) — no world-readable posts.
 - Link preview cards (domain, title, description, thumbnail) when `linkPreview` is present.
 - Header: title, handle, relative refresh time, info, sign out on one line. Pull-to-refresh on the feed calls `syncMyTimeline`. Info dialog: status, app version, admin-only usage (cumulative + this cycle), invite button (only if `invitesEnabled`; client creates invites with `maxUses: 5`, `days: 14`).
 - Author profile card (hover on desktop, tap on touch): Follow / Unfollow (`getAuthorCard`, `setFollowing`) and **Favorite** toggle (Firestore `users/{uid}/favorites`). Feed cards show a star mark for posts from favorited accounts. Follow defaults to Following until the API returns. Requires a fresh X sign-in after `follows.write` / `like.write` scopes were added.
-- Deep links: `?tweet=` and `window.MyTwitterOpenTweet` open/highlight a post (or fetch via `getTweet`). Native Android/iOS shells register for push and open tweets from notifications / deep links.
+- Deep links: `?tweet=` and `window.MyTwitterOpenTweet` open/highlight a post (or fetch via `getTweet`). Native Android/iOS shells register for push **after** a favorites-gated soft prompt (not on cold start) and open tweets from notifications / deep links.
 
 ## Secrets (Cloud Functions)
 

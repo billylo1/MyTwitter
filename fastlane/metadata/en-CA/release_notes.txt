@@ -1,2 +1,3 @@
-Offline cold start: reopen the app without network after one online visit and still see your cached feed.
-Improved membership handling when Firestore is unreachable.
+Favorites-gated notification prompt: no OS permission dialog on launch.
+Ask before enabling alerts when you favorite accounts (or if you already have favorites).
+Offline cold start still shows your cached feed after one online visit.

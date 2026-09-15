@@ -33,7 +33,7 @@
 		8EBBD1FADD1AB9D423146BDF /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		B4AED8656B83290FCD1D7147 /* MyTwitterRelease.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MyTwitterRelease.entitlements; sourceTree = "<group>"; };
 		F67438AF4F9BCB803DBB2CCD /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
-		"TEMP_2C5DD69D-9C5A-4054-B5B0-D91D69C6984D" /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
+		"TEMP_9011A769-5244-4EEF-83A1-5E6864DFC172" /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -84,10 +84,10 @@
 			path = MyTwitter;
 			sourceTree = "<group>";
 		};
-		"TEMP_43C64CEE-0A28-44C7-87EC-A14CDD1E6D01" /* ios */ = {
+		"TEMP_3C408947-8106-4059-AB27-543269D6E471" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_2C5DD69D-9C5A-4054-B5B0-D91D69C6984D" /* Config.xcconfig */,
+				"TEMP_9011A769-5244-4EEF-83A1-5E6864DFC172" /* Config.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -186,7 +186,7 @@
 /* Begin XCBuildConfiguration section */
 		6534C602ADD94C0AAEE61226 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_2C5DD69D-9C5A-4054-B5B0-D91D69C6984D" /* Config.xcconfig */;
+			baseConfigurationReference = "TEMP_9011A769-5244-4EEF-83A1-5E6864DFC172" /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -251,7 +251,7 @@
 		};
 		6C48753CB492E1C163C59221 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_2C5DD69D-9C5A-4054-B5B0-D91D69C6984D" /* Config.xcconfig */;
+			baseConfigurationReference = "TEMP_9011A769-5244-4EEF-83A1-5E6864DFC172" /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -323,7 +323,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.3;
+				MARKETING_VERSION = 0.1.4;
 				OTHER_LDFLAGS = "$(inherited) -ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = org.evergreenlabs.mytwitter;
 				PRODUCT_NAME = MyTwitter;
@@ -349,7 +349,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.3;
+				MARKETING_VERSION = 0.1.4;
 				OTHER_LDFLAGS = "$(inherited) -ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = org.evergreenlabs.mytwitter;
 				PRODUCT_NAME = MyTwitter;

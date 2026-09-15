@@ -16,6 +16,7 @@
     "deploy": "firebase deploy --only functions"
   },
   "dependencies": {
+    "@sentry/node": "^9.47.1",
     "firebase-admin": "^13.0.2",
     "firebase-functions": "^7.3.2",
     "twitter-api-v2": "^1.22.0"

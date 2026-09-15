@@ -35,5 +35,10 @@ if [[ ! -f "$ADMIN_JSON" ]]; then
   exit 1
 fi
 printf '%s' "$(cat "$ADMIN_JSON")" | npx -y firebase-tools@latest functions:secrets:set ADMIN_SDK_CREDENTIALS --project "$PROJECT" --data-file=-
+if [[ -n "${SENTRY_DSN:-}" ]]; then
+  printf '%s' "$SENTRY_DSN" | npx -y firebase-tools@latest functions:secrets:set SENTRY_DSN --project "$PROJECT" --data-file=-
+else
+  echo "SENTRY_DSN not set in .env — skipping (Functions Sentry stays disabled until set)."
+fi
 echo "Secrets updated for project $PROJECT. Redeploy functions:"
 echo "  npx -y firebase-tools@latest deploy --only functions"

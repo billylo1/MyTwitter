@@ -12,6 +12,7 @@ const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestor
 const { getMessaging } = require("firebase-admin/messaging");
 const { TwitterApi } = require("twitter-api-v2");
 const logger = require("firebase-functions/logger");
+const { reportError, initSentryFromEnv } = require("./sentry");
 
 initializeApp();
 const db = getFirestore();
@@ -25,6 +26,8 @@ const xApiSecret = defineSecret("X_API_SECRET");
 const xBearerToken = defineSecret("X_BEARER_TOKEN");
 const syncNowKey = defineSecret("SYNC_NOW_KEY");
 const firebaseAdminCreds = defineSecret("ADMIN_SDK_CREDENTIALS");
+/** Optional — leave unset to disable Sentry in Functions. */
+const sentryDsn = defineSecret("SENTRY_DSN");
 
 /** Sign custom tokens with the Admin SDK private key (avoids signBlob IAM on Gen2). */
 function getSigningAuth() {
@@ -120,14 +123,21 @@ function secretsFromEnv() {
 }
 
 const secretOpts = {
-  secrets: [xClientId, xClientSecret, xApiKey, xApiSecret, xBearerToken],
+  secrets: [
+    xClientId,
+    xClientSecret,
+    xApiKey,
+    xApiSecret,
+    xBearerToken,
+    sentryDsn,
+  ],
   timeoutSeconds: 300,
   memory: "512MiB",
   region: "us-central1",
 };
 
 const oauthSecretOpts = {
-  secrets: [xClientId, xClientSecret],
+  secrets: [xClientId, xClientSecret, sentryDsn],
   timeoutSeconds: 60,
   memory: "256MiB",
   region: "us-central1",
@@ -1036,6 +1046,7 @@ async function runSyncAll(secrets) {
         err.data?.errors?.[0]?.message ||
         err.message;
       logger.error("Sync failed", { uid: userDoc.id, error: detail });
+      await reportError(err, { fn: "syncUser", uid: userDoc.id, detail });
       await userDoc.ref.collection("sync").doc("state").set(
         {
           lastError: String(detail),
@@ -1129,6 +1140,7 @@ async function upsertMemberAndUser({
 // --- Auth endpoints ---
 
 exports.startXAuth = onRequest(oauthSecretOpts, async (req, res) => {
+  initSentryFromEnv();
   try {
     const invite = (req.query.invite || "").toString().trim() || null;
     const clientHint = (req.query.client || "").toString().trim().toLowerCase() || null;
@@ -1157,6 +1169,7 @@ exports.startXAuth = onRequest(oauthSecretOpts, async (req, res) => {
     res.redirect(302, url);
   } catch (err) {
     logger.error("startXAuth failed", err);
+    await reportError(err, { fn: "startXAuth" });
     res
       .status(500)
       .send(`Could not start X sign-in: ${escapeHtml(err.message)}`);
@@ -1173,9 +1186,11 @@ exports.xOAuthCallback = onRequest(
       xApiSecret,
       xBearerToken,
       firebaseAdminCreds,
+      sentryDsn,
     ],
   },
   async (req, res) => {
+    initSentryFromEnv();
     let oauthClientHint = null;
 
     const fail = (msg) => {
@@ -1312,14 +1327,15 @@ exports.xOAuthCallback = onRequest(
         error: err.message,
         data: err.data,
       });
+      await reportError(err, { fn: "xOAuthCallback" });
       fail("oauth_failed");
     }
   }
 );
 
 exports.createInvite = onCall(
-  { region: "us-central1" },
-  async (request) => {
+  { region: "us-central1", secrets: [sentryDsn] },
+  withSentryCall("createInvite", async (request) => {
     if (!request.auth?.uid) {
       throw new HttpsError("unauthenticated", "Sign in required");
     }
@@ -1362,7 +1378,7 @@ exports.createInvite = onCall(
       maxUses,
       expiresAt: expiresAt.toDate().toISOString(),
     };
-  }
+  })
 );
 
 function mapAuthorCard(user, viewerId) {
@@ -1403,7 +1419,26 @@ function throwXError(err, reconnectMessage) {
         "Sign out and sign in again to reconnect X permissions."
     );
   }
+  // Fire-and-forget report; HttpsError throw continues synchronously.
+  void reportError(err instanceof Error ? err : new Error(String(detail)), {
+    fn: "xApi",
+    code,
+    detail,
+  });
   throw new HttpsError("internal", String(detail));
+}
+
+/** Wrap an onCall handler so unexpected throws are sent to Sentry. */
+function withSentryCall(name, handler) {
+  return async (request) => {
+    initSentryFromEnv();
+    try {
+      return await handler(request);
+    } catch (err) {
+      await reportError(err, { fn: name });
+      throw err;
+    }
+  };
 }
 
 async function callerClient(uid) {
@@ -1448,12 +1483,14 @@ async function lookupAuthor(client, { userId, handle }) {
 
 const followFnOpts = {
   region: "us-central1",
-  secrets: [xClientId, xClientSecret, xApiKey, xApiSecret],
+  secrets: [xClientId, xClientSecret, xApiKey, xApiSecret, sentryDsn],
   timeoutSeconds: 30,
   memory: "256MiB",
 };
 
-exports.getAuthorCard = onCall(followFnOpts, async (request) => {
+exports.getAuthorCard = onCall(
+  followFnOpts,
+  withSentryCall("getAuthorCard", async (request) => {
   if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Sign in required");
   }
@@ -1469,9 +1506,12 @@ exports.getAuthorCard = onCall(followFnOpts, async (request) => {
     throw new HttpsError("not-found", "Account not found");
   }
   return mapAuthorCard(user, xUserId);
-});
+  })
+);
 
-exports.setFollowing = onCall(followFnOpts, async (request) => {
+exports.setFollowing = onCall(
+  followFnOpts,
+  withSentryCall("setFollowing", async (request) => {
   if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Sign in required");
   }
@@ -1497,9 +1537,12 @@ exports.setFollowing = onCall(followFnOpts, async (request) => {
   }
 
   return { userId: targetId, following: follow };
-});
+  })
+);
 
-exports.setLiked = onCall(followFnOpts, async (request) => {
+exports.setLiked = onCall(
+  followFnOpts,
+  withSentryCall("setLiked", async (request) => {
   if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Sign in required");
   }
@@ -1534,11 +1577,16 @@ exports.setLiked = onCall(followFnOpts, async (request) => {
   }
 
   return { tweetId, liked: like };
-});
-
+  })
+);
 exports.resolveTweetUrl = onCall(
-  { region: "us-central1", timeoutSeconds: 30, memory: "256MiB" },
-  async (request) => {
+  {
+    region: "us-central1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    secrets: [sentryDsn],
+  },
+  withSentryCall("resolveTweetUrl", async (request) => {
     if (!request.auth?.uid) {
       throw new HttpsError("unauthenticated", "Sign in required");
     }
@@ -1574,10 +1622,12 @@ exports.resolveTweetUrl = onCall(
       );
     }
     return { tweetId, resolvedUrl: candidate };
-  }
+  })
 );
 
-exports.getTweet = onCall(followFnOpts, async (request) => {
+exports.getTweet = onCall(
+  followFnOpts,
+  withSentryCall("getTweet", async (request) => {
   if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Sign in required");
   }
@@ -1616,11 +1666,12 @@ exports.getTweet = onCall(followFnOpts, async (request) => {
     if (err instanceof HttpsError) throw err;
     throwXError(err, "Sign out and sign in again to load posts.");
   }
-});
+  })
+);
 
 exports.registerDevice = onCall(
-  { region: "us-central1" },
-  async (request) => {
+  { region: "us-central1", secrets: [sentryDsn] },
+  withSentryCall("registerDevice", async (request) => {
     if (!request.auth?.uid) {
       throw new HttpsError("unauthenticated", "Sign in required");
     }
@@ -1661,12 +1712,13 @@ exports.registerDevice = onCall(
       );
 
     return { ok: true };
-  }
+  })
 );
 
 const MANUAL_SYNC_COOLDOWN_MS = 60_000;
 
 exports.syncMyTimeline = onCall(secretOpts, async (request) => {
+  initSentryFromEnv();
   if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Sign in required");
   }
@@ -1724,6 +1776,7 @@ exports.syncMyTimeline = onCall(secretOpts, async (request) => {
       err.message ||
       String(err);
     logger.error("syncMyTimeline failed", { uid, error: detail });
+    await reportError(err, { fn: "syncMyTimeline", uid, detail });
     throw new HttpsError("internal", String(detail));
   }
 });
@@ -1734,8 +1787,15 @@ exports.syncTimeline = onSchedule(
     ...secretOpts,
   },
   async () => {
-    const summary = await runSyncAll(secretsFromEnv());
-    logger.info("syncTimeline done", summary);
+    initSentryFromEnv();
+    try {
+      const summary = await runSyncAll(secretsFromEnv());
+      logger.info("syncTimeline done", summary);
+    } catch (err) {
+      logger.error("syncTimeline failed", err);
+      await reportError(err, { fn: "syncTimeline" });
+      throw err;
+    }
   }
 );
 
@@ -1745,6 +1805,7 @@ exports.syncNow = onRequest(
     secrets: [...secretOpts.secrets, syncNowKey],
   },
   async (req, res) => {
+    initSentryFromEnv();
     const expected = syncNowKey.value();
     if (!expected || req.query.key !== expected) {
       res.status(403).json({ error: "forbidden" });
@@ -1756,6 +1817,7 @@ exports.syncNow = onRequest(
       res.json({ ok: true, ...summary });
     } catch (err) {
       logger.error("syncNow failed", err);
+      await reportError(err, { fn: "syncNow" });
       res.status(500).json({ ok: false, error: String(err.message || err) });
     }
   }

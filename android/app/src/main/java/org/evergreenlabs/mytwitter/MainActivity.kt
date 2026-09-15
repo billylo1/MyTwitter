@@ -53,8 +53,11 @@ class MainActivity : AppCompatActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
-        // One-shot debug verification that Sentry receives events.
-        if (BuildConfig.DEBUG && intent?.getBooleanExtra(EXTRA_SENTRY_TEST, false) == true) {
+        // One-shot debug verification that Sentry receives events (no-op if DSN unset).
+        if (BuildConfig.DEBUG &&
+            BuildConfig.SENTRY_DSN.isNotBlank() &&
+            intent?.getBooleanExtra(EXTRA_SENTRY_TEST, false) == true
+        ) {
             Sentry.captureException(RuntimeException("Sentry Android SDK test — MyTwitter"))
         }
 

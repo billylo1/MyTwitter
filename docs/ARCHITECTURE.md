@@ -46,7 +46,7 @@ flowchart LR
 | [`fastlane/`](../fastlane/) | Homebrew Fastlane: `android beta` (Play open testing), `ios beta` (TestFlight), `beta_both` (Android then iOS). Secrets stay in env / `~/.sidekick-secrets` / ASC key path — not in git |
 | `public/firebase-config.js` | Local Firebase web config (`window.FIREBASE_CONFIG`; gitignored) |
 | Hosting rewrites | `/oauth/start` → `startXAuth`, `/oauth/callback` → `xOAuthCallback` |
-| Cloud Functions | See exports table below; optional Sentry via Secret Manager `SENTRY_DSN` |
+| Cloud Functions | See exports table below; optional Sentry via `SENTRY_DSN` in `functions/.env.<projectId>` (unset ⇒ off) |
 | Firestore | Members, posts, tokens (Admin-only), sync state, allowlist; web client enables `persistentLocalCache` for offline reads |
 | Firebase Auth | Custom tokens only; **Auth uid = X user id** |
 | X API | OAuth 2.0 user context + `GET /2/users/:id/timelines/reverse_chronological` (via `homeTimeline`) |
@@ -78,7 +78,7 @@ Hosting also sets `Referrer-Policy: no-referrer`. Firestore database location is
 | Hosting / OAuth origin | Functions param `SITE_URL` in `functions/.env.<projectId>` |
 | Web SDK config | `public/firebase-config.js` |
 | X + sync secrets | `.env` → `scripts/set-secrets.sh` → Secret Manager |
-| Functions Sentry DSN | Optional Secret Manager `SENTRY_DSN` (same value as mobile is fine); unset ⇒ reporting disabled |
+| Functions Sentry DSN | Optional `SENTRY_DSN` in gitignored `functions/.env.<projectId>` (`defineString`, default empty). Unset ⇒ reporting disabled; forks need not create any secret |
 | Android site URL / Sentry DSN | `android/local.properties` (`site.url`, `sentry.dsn`) or env — never commit live values |
 | iOS site URL / Sentry DSN | `ios/Config.xcconfig` (`SITE_URL`, `SENTRY_DSN`) — never commit live values |
 | Friend/family invites | `config/public.invitesEnabled` (boolean; **default off** when unset) |

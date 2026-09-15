@@ -2,5 +2,5 @@
 // In xcconfig, // starts a comment — write https:/$()/host for https://host
 
 SITE_URL = https:/$()/YOUR_PROJECT_ID.web.app
-// Optional — leave blank to disable Sentry
+// Optional — leave blank to disable Sentry (forks can omit entirely)
 SENTRY_DSN =

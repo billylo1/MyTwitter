@@ -26,8 +26,22 @@ const xApiSecret = defineSecret("X_API_SECRET");
 const xBearerToken = defineSecret("X_BEARER_TOKEN");
 const syncNowKey = defineSecret("SYNC_NOW_KEY");
 const firebaseAdminCreds = defineSecret("ADMIN_SDK_CREDENTIALS");
-/** Optional — leave unset to disable Sentry in Functions. */
-const sentryDsn = defineSecret("SENTRY_DSN");
+/** Optional — empty default so forks work without Sentry. Set in functions/.env.<projectId>. */
+const sentryDsn = defineString("SENTRY_DSN", {
+  default: "",
+  description: "Optional Sentry DSN for Cloud Functions (leave blank to disable)",
+});
+
+/** Resolve optional SENTRY_DSN param (empty for forks) then init. */
+function ensureSentry() {
+  try {
+    const dsn = (sentryDsn.value() || "").trim();
+    if (dsn) process.env.SENTRY_DSN = dsn;
+  } catch {
+    // Param not available in this context — leave process.env as-is.
+  }
+  return initSentryFromEnv();
+}
 
 /** Sign custom tokens with the Admin SDK private key (avoids signBlob IAM on Gen2). */
 function getSigningAuth() {
@@ -129,7 +143,6 @@ const secretOpts = {
     xApiKey,
     xApiSecret,
     xBearerToken,
-    sentryDsn,
   ],
   timeoutSeconds: 300,
   memory: "512MiB",
@@ -137,7 +150,7 @@ const secretOpts = {
 };
 
 const oauthSecretOpts = {
-  secrets: [xClientId, xClientSecret, sentryDsn],
+  secrets: [xClientId, xClientSecret],
   timeoutSeconds: 60,
   memory: "256MiB",
   region: "us-central1",
@@ -1140,7 +1153,7 @@ async function upsertMemberAndUser({
 // --- Auth endpoints ---
 
 exports.startXAuth = onRequest(oauthSecretOpts, async (req, res) => {
-  initSentryFromEnv();
+  ensureSentry();
   try {
     const invite = (req.query.invite || "").toString().trim() || null;
     const clientHint = (req.query.client || "").toString().trim().toLowerCase() || null;
@@ -1186,11 +1199,10 @@ exports.xOAuthCallback = onRequest(
       xApiSecret,
       xBearerToken,
       firebaseAdminCreds,
-      sentryDsn,
     ],
   },
   async (req, res) => {
-    initSentryFromEnv();
+    ensureSentry();
     let oauthClientHint = null;
 
     const fail = (msg) => {
@@ -1334,7 +1346,7 @@ exports.xOAuthCallback = onRequest(
 );
 
 exports.createInvite = onCall(
-  { region: "us-central1", secrets: [sentryDsn] },
+  { region: "us-central1" },
   withSentryCall("createInvite", async (request) => {
     if (!request.auth?.uid) {
       throw new HttpsError("unauthenticated", "Sign in required");
@@ -1431,7 +1443,7 @@ function throwXError(err, reconnectMessage) {
 /** Wrap an onCall handler so unexpected throws are sent to Sentry. */
 function withSentryCall(name, handler) {
   return async (request) => {
-    initSentryFromEnv();
+    ensureSentry();
     try {
       return await handler(request);
     } catch (err) {
@@ -1483,7 +1495,7 @@ async function lookupAuthor(client, { userId, handle }) {
 
 const followFnOpts = {
   region: "us-central1",
-  secrets: [xClientId, xClientSecret, xApiKey, xApiSecret, sentryDsn],
+  secrets: [xClientId, xClientSecret, xApiKey, xApiSecret],
   timeoutSeconds: 30,
   memory: "256MiB",
 };
@@ -1584,7 +1596,6 @@ exports.resolveTweetUrl = onCall(
     region: "us-central1",
     timeoutSeconds: 30,
     memory: "256MiB",
-    secrets: [sentryDsn],
   },
   withSentryCall("resolveTweetUrl", async (request) => {
     if (!request.auth?.uid) {
@@ -1670,7 +1681,7 @@ exports.getTweet = onCall(
 );
 
 exports.registerDevice = onCall(
-  { region: "us-central1", secrets: [sentryDsn] },
+  { region: "us-central1" },
   withSentryCall("registerDevice", async (request) => {
     if (!request.auth?.uid) {
       throw new HttpsError("unauthenticated", "Sign in required");
@@ -1718,7 +1729,7 @@ exports.registerDevice = onCall(
 const MANUAL_SYNC_COOLDOWN_MS = 60_000;
 
 exports.syncMyTimeline = onCall(secretOpts, async (request) => {
-  initSentryFromEnv();
+  ensureSentry();
   if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Sign in required");
   }
@@ -1787,7 +1798,7 @@ exports.syncTimeline = onSchedule(
     ...secretOpts,
   },
   async () => {
-    initSentryFromEnv();
+    ensureSentry();
     try {
       const summary = await runSyncAll(secretsFromEnv());
       logger.info("syncTimeline done", summary);
@@ -1805,7 +1816,7 @@ exports.syncNow = onRequest(
     secrets: [...secretOpts.secrets, syncNowKey],
   },
   async (req, res) => {
-    initSentryFromEnv();
+    ensureSentry();
     const expected = syncNowKey.value();
     if (!expected || req.query.key !== expected) {
       res.status(403).json({ error: "forbidden" });

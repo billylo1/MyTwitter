@@ -10,6 +10,8 @@ settings:
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1,2"
     CLANG_ENABLE_MODULES: YES
+    # Empty default so forks without SENTRY_DSN in Config.xcconfig stay disabled.
+    SENTRY_DSN: ""
 configs:
   Debug: debug
   Release: release

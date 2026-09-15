@@ -1,29 +1,44 @@
 /**
- * Sentry for Cloud Functions. DSN from Secret Manager (SENTRY_DSN) —
- * never hardcode. No-ops when the secret is unset.
+ * Optional Sentry for Cloud Functions.
+ * Set SENTRY_DSN in functions/.env.<projectId> (gitignored) to enable.
+ * Empty / unset ⇒ no-op (safe for forks).
  */
 
-const Sentry = require("@sentry/node");
-
 let initialized = false;
+let enabled = false;
+/** @type {typeof import("@sentry/node") | null} */
+let Sentry = null;
 
 function initSentryFromEnv() {
-  if (initialized) return Boolean(process.env.SENTRY_DSN);
+  if (initialized) return enabled;
   initialized = true;
   const dsn = (process.env.SENTRY_DSN || "").trim();
-  if (!dsn) return false;
-  Sentry.init({
-    dsn,
-    environment:
-      process.env.FUNCTIONS_EMULATOR === "true" ? "emulator" : "production",
-    // Cloud Run revision when deployed (Gen2).
-    release: process.env.K_REVISION || undefined,
-    tracesSampleRate: 0,
-  });
-  return true;
+  if (!dsn) {
+    enabled = false;
+    return false;
+  }
+  try {
+    // Lazy require so a missing optional install never breaks cold start.
+    Sentry = require("@sentry/node");
+    Sentry.init({
+      dsn,
+      environment:
+        process.env.FUNCTIONS_EMULATOR === "true" ? "emulator" : "production",
+      release: process.env.K_REVISION || undefined,
+      tracesSampleRate: 0,
+    });
+    enabled = true;
+  } catch (err) {
+    console.warn(
+      "[sentry] init skipped:",
+      err && err.message ? err.message : err
+    );
+    enabled = false;
+  }
+  return enabled;
 }
 
-/** Expected client / auth failures — do not page on these. */
+/** Expected client / auth failures — do not report. */
 function isExpectedHttpsError(err) {
   if (!err || typeof err.code !== "string") return false;
   const code = err.code.replace(/^functions\//, "");
@@ -50,19 +65,25 @@ function isExpectedHttpsError(err) {
 async function reportError(err, context = {}) {
   if (!err) return;
   if (isExpectedHttpsError(err)) return;
-  if (!initSentryFromEnv()) return;
+  if (!initSentryFromEnv() || !Sentry) return;
 
-  Sentry.withScope((scope) => {
-    for (const [key, value] of Object.entries(context)) {
-      if (value !== undefined) scope.setExtra(key, value);
-    }
-    Sentry.captureException(err);
-  });
-  await Sentry.flush(2000);
+  try {
+    Sentry.withScope((scope) => {
+      for (const [key, value] of Object.entries(context)) {
+        if (value !== undefined) scope.setExtra(key, value);
+      }
+      Sentry.captureException(err);
+    });
+    await Sentry.flush(2000);
+  } catch (reportErr) {
+    console.warn(
+      "[sentry] report failed:",
+      reportErr && reportErr.message ? reportErr.message : reportErr
+    );
+  }
 }
 
 module.exports = {
-  Sentry,
   initSentryFromEnv,
   reportError,
   isExpectedHttpsError,

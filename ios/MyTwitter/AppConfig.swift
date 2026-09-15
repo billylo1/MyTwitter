@@ -11,9 +11,15 @@ enum AppConfig {
         return cleaned
     }
 
+    /// Empty / placeholder / unresolved xcconfig ⇒ Sentry stays off (safe for forks).
     static var sentryDSN: String {
-        (Bundle.main.object(forInfoDictionaryKey: "SENTRY_DSN") as? String)?
+        let raw = (Bundle.main.object(forInfoDictionaryKey: "SENTRY_DSN") as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if raw.isEmpty { return "" }
+        if raw.contains("$(") { return "" }
+        if raw.localizedCaseInsensitiveContains("YOUR_") { return "" }
+        if !(raw.hasPrefix("http://") || raw.hasPrefix("https://")) { return "" }
+        return raw
     }
 
     static var versionName: String {

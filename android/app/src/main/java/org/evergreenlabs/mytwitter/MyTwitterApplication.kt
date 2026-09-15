@@ -10,7 +10,7 @@ class MyTwitterApplication : Application() {
 
         val dsn = BuildConfig.SENTRY_DSN.trim()
         if (dsn.isEmpty()) {
-            Log.w(TAG, "Sentry disabled (set sentry.dsn in local.properties or SENTRY_DSN)")
+            Log.i(TAG, "Sentry disabled (optional; set sentry.dsn or SENTRY_DSN to enable)")
             return
         }
 

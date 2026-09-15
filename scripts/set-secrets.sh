@@ -36,9 +36,20 @@ if [[ ! -f "$ADMIN_JSON" ]]; then
 fi
 printf '%s' "$(cat "$ADMIN_JSON")" | npx -y firebase-tools@latest functions:secrets:set ADMIN_SDK_CREDENTIALS --project "$PROJECT" --data-file=-
 if [[ -n "${SENTRY_DSN:-}" ]]; then
-  printf '%s' "$SENTRY_DSN" | npx -y firebase-tools@latest functions:secrets:set SENTRY_DSN --project "$PROJECT" --data-file=-
+  # Optional param (not a required Secret Manager secret) so forks can omit it.
+  ENV_FILE="$ROOT/functions/.env.${PROJECT}"
+  if [[ -f "$ENV_FILE" ]] && grep -q '^SENTRY_DSN=' "$ENV_FILE" 2>/dev/null; then
+    # Replace existing line without printing the DSN.
+    tmp="$(mktemp)"
+    grep -v '^SENTRY_DSN=' "$ENV_FILE" >"$tmp" || true
+    printf 'SENTRY_DSN=%s\n' "$SENTRY_DSN" >>"$tmp"
+    mv "$tmp" "$ENV_FILE"
+  else
+    printf '\nSENTRY_DSN=%s\n' "$SENTRY_DSN" >>"$ENV_FILE"
+  fi
+  echo "Wrote SENTRY_DSN to functions/.env.${PROJECT} (gitignored; optional)."
 else
-  echo "SENTRY_DSN not set in .env — skipping (Functions Sentry stays disabled until set)."
+  echo "SENTRY_DSN not set — Functions Sentry stays disabled (fine for forks)."
 fi
 echo "Secrets updated for project $PROJECT. Redeploy functions:"
 echo "  npx -y firebase-tools@latest deploy --only functions"

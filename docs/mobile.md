@@ -20,10 +20,11 @@ Edit `android/local.properties`:
 ```properties
 sdk.dir=/Users/YOU/Library/Android/sdk
 site.url=https://YOUR_PROJECT_ID.web.app
-sentry.dsn=https://YOUR_PUBLIC_KEY@oXXXX.ingest.us.sentry.io/PROJECT_ID
+# Optional — omit or leave blank to disable Sentry (recommended for forks)
+# sentry.dsn=https://YOUR_PUBLIC_KEY@oXXXX.ingest.us.sentry.io/PROJECT_ID
 ```
 
-`site.url` becomes `BuildConfig.SITE_URL`. `sentry.dsn` (or env `SENTRY_DSN`) becomes `BuildConfig.SENTRY_DSN`. If unset, Sentry stays disabled. Do not commit `local.properties`.
+`site.url` becomes `BuildConfig.SITE_URL`. `sentry.dsn` (or env `SENTRY_DSN`) becomes `BuildConfig.SENTRY_DSN`. Empty / placeholder / unset ⇒ Sentry stays fully disabled (no init, no Gradle upload). Do not commit `local.properties`.
 
 Register an Android app in Firebase with package `org.evergreenlabs.mytwitter` and keep [`android/app/google-services.json`](../android/app/google-services.json) in sync (required for FCM).
 
@@ -107,10 +108,11 @@ Edit `ios/Config.xcconfig` (gitignored). In xcconfig files, `//` starts a commen
 
 ```
 SITE_URL = https:/$()/YOUR_PROJECT_ID.web.app
-SENTRY_DSN = https:/$()/YOUR_PUBLIC_KEY@oXXXX.ingest.us.sentry.io/PROJECT_ID
+# Optional — leave blank (or omit) to disable Sentry
+# SENTRY_DSN = https:/$()/YOUR_PUBLIC_KEY@oXXXX.ingest.us.sentry.io/PROJECT_ID
 ```
 
-Leave `SENTRY_DSN` blank to disable Sentry. The app links SPM product `Sentry-Dynamic` (not static `Sentry`) so App Store archives include `Sentry.framework` dSYMs.
+Leave `SENTRY_DSN` blank to disable Sentry — the app never starts the SDK without a real `https://` DSN (placeholders and unresolved `$(…)` values are ignored). The app links SPM product `Sentry-Dynamic` (not static `Sentry`) so App Store archives include `Sentry.framework` dSYMs when you do enable it. Fastlane dSYM upload is also optional: it runs only when `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and `SENTRY_PROJECT` are all set.
 
 Register an iOS app in Firebase with the same bundle ID and keep [`ios/MyTwitter/GoogleService-Info.plist`](../ios/MyTwitter/GoogleService-Info.plist) in sync. Upload an Apple APNs **Authentication Key** (`.p8` from [Certificates, Identifiers & Keys](https://developer.apple.com/account/resources/authkeys/list), with Apple Push Notifications enabled) in Firebase Console → Project settings → Cloud Messaging → Apple app configuration — both **development** and **production** slots (same `.p8` / Key ID / Team ID is fine). Also enable **Push Notifications** on the App ID `org.evergreenlabs.mytwitter` and run with code signing so `aps-environment` is embedded.
 

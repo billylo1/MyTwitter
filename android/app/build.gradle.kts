@@ -24,11 +24,22 @@ val siteUrl: String =
         ?: "https://YOUR_PROJECT_ID.web.app")
         .trimEnd('/')
 
+// Optional — empty / placeholder ⇒ Sentry disabled at runtime (safe for forks).
+fun sanitizeSentryDsn(raw: String?): String {
+    val dsn = (raw ?: "").trim()
+    if (dsn.isEmpty()) return ""
+    if (dsn.contains("YOUR_", ignoreCase = true)) return ""
+    if (!dsn.startsWith("http://") && !dsn.startsWith("https://")) return ""
+    return dsn
+}
+
+val sentryDsnRaw: String =
+    sanitizeSentryDsn(
+        localProperties.getProperty("sentry.dsn") ?: System.getenv("SENTRY_DSN"),
+    )
+val sentryEnabled = sentryDsnRaw.isNotEmpty()
 val sentryDsn: String =
-    (localProperties.getProperty("sentry.dsn")
-        ?: System.getenv("SENTRY_DSN")
-        ?: "")
-        .trim()
+    sentryDsnRaw
         .replace("\\", "\\\\")
         .replace("\"", "\\\"")
 
@@ -110,10 +121,13 @@ dependencies {
 }
 
 sentry {
-    // Mapping upload needs SENTRY_AUTH_TOKEN; skip quietly when unset.
-    autoUploadProguardMapping.set(System.getenv("SENTRY_AUTH_TOKEN") != null)
+    // Never require Sentry credentials for a local/fork build.
+    autoUploadProguardMapping.set(
+        sentryEnabled && !System.getenv("SENTRY_AUTH_TOKEN").isNullOrBlank(),
+    )
     includeSourceContext.set(false)
+    telemetry.set(false)
     tracingInstrumentation {
-        enabled.set(true)
+        enabled.set(sentryEnabled)
     }
 }

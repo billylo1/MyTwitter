@@ -164,8 +164,16 @@ def build_ios_app!
 end
 
 def upload_dsyms_to_sentry!
+  # Optional for forks: skip unless auth + org + project are all set.
   return unless system("which sentry-cli > /dev/null 2>&1")
   return if ENV["SENTRY_AUTH_TOKEN"].to_s.empty?
+
+  org = ENV["SENTRY_ORG"].to_s.strip
+  project = ENV["SENTRY_PROJECT"].to_s.strip
+  if org.empty? || project.empty?
+    UI.important("SENTRY_ORG / SENTRY_PROJECT unset; skipping dSYM upload (optional)")
+    return
+  end
 
   dsym = lane_context[SharedValues::DSYM_OUTPUT_PATH]
   dsym ||= Dir[File.join(PROJECT_ROOT, "*.dSYM.zip")].max_by { |p| File.mtime(p) }
@@ -173,9 +181,6 @@ def upload_dsyms_to_sentry!
     UI.important("No dSYM found; skipping Sentry upload")
     return
   end
-
-  org = ENV.fetch("SENTRY_ORG", "evergreenlabs")
-  project = ENV.fetch("SENTRY_PROJECT", "mytwitter")
 
   begin
     sh(

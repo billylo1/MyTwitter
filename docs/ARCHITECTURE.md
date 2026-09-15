@@ -62,7 +62,7 @@ flowchart LR
 | `setFollowing` | Callable | Follow / unfollow on X |
 | `setLiked` | Callable | Like / unlike on X + Firestore mirror |
 | `resolveTweetUrl` | Callable | Expand `t.co` / parse status URLs → tweet id |
-| `getTweet` | Callable | Fetch a tweet via X API + write-through to own posts |
+| `getTweet` | Callable | Fetch a tweet via X API for deep links / t.co (dialog only — does **not** write into the following `posts` feed) |
 | `registerDevice` | Callable | Store FCM device token under `users/{uid}/devices` |
 | `syncMyTimeline` | Callable | Authenticated pull-to-refresh: sync only the signed-in user (60s cooldown) |
 | `syncTimeline` | Scheduler (`every 10 minutes`) | Poll all enabled users; push when favorited authors post |
@@ -145,7 +145,7 @@ Rules: [`firestore.rules`](../firestore.rules) — no world-readable posts.
 - Link preview cards (domain, title, description, thumbnail) when `linkPreview` is present.
 - Header: title, handle, relative refresh time, info, sign out on one line. Pull-to-refresh on the feed calls `syncMyTimeline`. Info dialog: status, app version, admin-only usage (cumulative + this cycle), invite button (only if `invitesEnabled`; client creates invites with `maxUses: 5`, `days: 14`).
 - Author profile card (hover on desktop, tap on touch): Follow / Unfollow (`getAuthorCard`, `setFollowing`) and **Favorite** toggle (Firestore `users/{uid}/favorites`). Feed cards show a star mark for posts from favorited accounts. Follow defaults to Following until the API returns. Requires a fresh X sign-in after `follows.write` / `like.write` scopes were added.
-- Deep links: `?tweet=` and `window.MyTwitterOpenTweet` open/highlight a post (or fetch via `getTweet`). Native Android/iOS shells register for push **after** a favorites-gated soft prompt (not on cold start) and open tweets from notifications / deep links. The soft prompt is skipped when `MyTwitterNative.notificationsAuthorized` is true or the user already opted in (WebView `Notification.permission` does not mirror OS grants).
+- Deep links: `?tweet=` and `window.MyTwitterOpenTweet` open/highlight a post already in the feed, or fetch via `getTweet` into a dialog (lookups are not written into the following timeline). Native Android/iOS shells register for push **after** a favorites-gated soft prompt (not on cold start) and open tweets from notifications / deep links. The soft prompt is skipped when `MyTwitterNative.notificationsAuthorized` is true or the user already opted in (WebView `Notification.permission` does not mirror OS grants).
 - Returning-user cold start: SPA paints last posts from `localStorage` before Auth restore; native shells set a session hint (`mt_session` + `has-session`) so chrome/skeletons appear immediately.
 
 ## Secrets (Cloud Functions)

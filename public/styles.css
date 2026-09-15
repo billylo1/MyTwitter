@@ -370,6 +370,7 @@ html.has-session #app-shell.hidden {
   cursor: pointer;
   content-visibility: auto;
   contain-intrinsic-size: auto 220px;
+  overflow-anchor: auto;
 }
 
 .card-skeleton {
@@ -819,6 +820,7 @@ html.has-session #app-shell.hidden {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   scroll-margin-top: 5rem;
+  content-visibility: visible;
 }
 
 .tweet-dialog {
@@ -850,6 +852,12 @@ html.has-session #app-shell.hidden {
 
 .tweet-dialog-body {
   padding: 0.35rem 1rem 1rem;
+}
+
+.tweet-dialog-loading {
+  margin: 0.35rem 0 0.85rem;
+  color: var(--muted);
+  font-size: 0.95rem;
 }
 
 .tweet-dialog-body .card {

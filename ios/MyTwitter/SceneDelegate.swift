@@ -5,11 +5,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
 
     /// Narrowest allowed Mac window (still phone-like).
-    private static let macMinWidth: CGFloat = 390
-    /// Comfortable launch width — wider than a phone bezel so it isn't cramped.
-    private static let macLaunchWidth: CGFloat = 520
+    private static let macMinWidth: CGFloat = 507
+    /// Comfortable launch width (~30% wider than the prior 520pt default).
+    private static let macLaunchWidth: CGFloat = 676
     /// Allow stretching to a short iPad-ish column.
-    private static let macMaxWidth: CGFloat = 900
+    private static let macMaxWidth: CGFloat = 1170
     private static let macMinHeight: CGFloat = 500
 
     func scene(

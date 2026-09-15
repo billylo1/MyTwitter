@@ -91,7 +91,7 @@ const appVersionEl = document.getElementById("app-version");
 const ptrIndicatorEl = document.getElementById("ptr-indicator");
 
 /** Web SPA build label (bump when shipping Hosting). Native apps override via bridge. */
-const APP_VERSION = "0.1.10";
+const APP_VERSION = "0.1.14";
 const SESSION_HINT_KEY = "mytwitter:hasSession";
 const LAST_UID_KEY = "mytwitter:lastUid";
 const FEED_CACHE_KEY = "mytwitter:feedCache:v1";
@@ -587,7 +587,38 @@ function renderPost(id, data) {
 function createPostElement(id, data) {
   const wrap = document.createElement("div");
   wrap.innerHTML = renderPost(id, data).trim();
-  return wrap.firstElementChild;
+  const el = wrap.firstElementChild;
+  if (el) el.dataset.renderKey = postRenderKey(id, data);
+  return el;
+}
+
+/** Stable fingerprint of fields that affect card DOM (excludes sync-only metadata). */
+function postRenderKey(id, data) {
+  const created =
+    data.createdAt?.toMillis?.() ??
+    data.createdAt?.toDate?.()?.getTime?.() ??
+    (typeof data.createdAt === "string" ? data.createdAt : null);
+  const isFavoritedAuthor =
+    (data.authorId && favoritedIds.has(String(data.authorId))) ||
+    (data.repostedById && favoritedIds.has(String(data.repostedById)));
+  return JSON.stringify({
+    id,
+    text: data.text || "",
+    url: data.url || "",
+    authorId: data.authorId || "",
+    authorHandle: data.authorHandle || "",
+    authorName: data.authorName || "",
+    authorAvatar: data.authorAvatar || "",
+    createdAt: created,
+    media: data.media || null,
+    mediaUrls: data.mediaUrls || null,
+    linkPreview: data.linkPreview || null,
+    isRetweet: Boolean(data.isRetweet),
+    repostedById: data.repostedById || "",
+    repostedByHandle: data.repostedByHandle || "",
+    liked: likedIds.has(id),
+    favoritedAuthor: Boolean(isFavoritedAuthor),
+  });
 }
 
 const authorCardEl = document.getElementById("author-card");
@@ -950,13 +981,36 @@ function highlightCard(card) {
   }, 4000);
 }
 
-async function openTweetById(tweetId) {
-  const id = String(tweetId || "").replace(/\D/g, "");
-  if (!id) return;
+/** Bumped on each open so slow resolve/getTweet results don't clobber a newer tap. */
+let tweetOpenGen = 0;
+
+function showTweetDialogLoading(message) {
+  if (!tweetDialogBody || !tweetDialogEl) return;
+  tweetDialogBody.innerHTML = `
+    <p class="tweet-dialog-loading" aria-live="polite">${escapeHtml(message)}</p>
+    <div class="card card-skeleton" aria-hidden="true"></div>
+  `;
+  if (!tweetDialogEl.open) tweetDialogEl.showModal();
+}
+
+function showTweetDialogError(message) {
+  if (!tweetDialogBody || !tweetDialogEl) {
+    statusEl.textContent = message;
+    return;
+  }
+  tweetDialogBody.innerHTML = `<p class="tweet-dialog-loading" aria-live="polite">${escapeHtml(message)}</p>`;
+  if (!tweetDialogEl.open) tweetDialogEl.showModal();
+  statusEl.textContent = message;
+}
+
+async function openTweetById(tweetId, { gen } = {}) {
+  const id = String(tweetId || "").trim();
+  if (!/^\d+$/.test(id)) return;
+  const openGen = gen ?? ++tweetOpenGen;
   const existing = feedEl.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
   if (existing) {
-    highlightCard(existing);
     if (tweetDialogEl?.open) tweetDialogEl.close();
+    highlightCard(existing);
     return;
   }
   if (!auth.currentUser) {
@@ -964,39 +1018,42 @@ async function openTweetById(tweetId) {
     return;
   }
 
-  statusEl.textContent = "Loading post…";
+  showTweetDialogLoading("Loading post…");
   try {
     const postSnap = await getDoc(doc(db, "users", auth.currentUser.uid, "posts", id));
+    if (openGen !== tweetOpenGen) return;
     let data = postSnap.exists() ? postSnap.data() : null;
     if (!data) {
+      showTweetDialogLoading("Fetching post…");
       const getTweet = await callable("getTweet");
       const result = await getTweet({ tweetId: id });
+      if (openGen !== tweetOpenGen) return;
       data = result.data?.post || null;
     }
     if (!data) {
-      statusEl.textContent = "Could not find that post.";
+      showTweetDialogError("Could not find that post.");
       return;
     }
-    if (tweetDialogBody && tweetDialogEl) {
-      const el = createPostElement(id, data);
-      el.querySelector(".card-hit")?.remove();
-      watchCardVideos(el);
-      for (const video of el.querySelectorAll("video")) hydrateVideoSrc(video);
-      tweetDialogBody.innerHTML = "";
-      tweetDialogBody.appendChild(el);
-      if (!tweetDialogEl.open) tweetDialogEl.showModal();
-      statusEl.textContent = "Post loaded.";
-    } else {
-      const el = createPostElement(id, data);
-      watchCardVideos(el);
-      highlightCard(el);
+    if (!tweetDialogBody || !tweetDialogEl) {
+      showTweetDialogError("Could not open that post.");
+      return;
     }
+    const el = createPostElement(id, data);
+    el.querySelector(".card-hit")?.remove();
+    watchCardVideos(el);
+    for (const video of el.querySelectorAll("video")) hydrateVideoSrc(video);
+    tweetDialogBody.innerHTML = "";
+    tweetDialogBody.appendChild(el);
+    if (!tweetDialogEl.open) tweetDialogEl.showModal();
+    statusEl.textContent = "Post loaded.";
   } catch (err) {
+    if (openGen !== tweetOpenGen) return;
     console.error(err);
-    statusEl.textContent =
+    showTweetDialogError(
       err.code === "functions/failed-precondition"
         ? err.message
-        : "Could not open that post.";
+        : "Could not open that post."
+    );
   }
 }
 
@@ -1020,16 +1077,23 @@ window.MyTwitterOpenTweet = function MyTwitterOpenTweet(tweetIdOrUrl) {
     void openTweetById(statusMatch[1]);
     return;
   }
+  const gen = ++tweetOpenGen;
+  // statusEl lives in the closed info dialog — open the tweet dialog immediately.
+  showTweetDialogLoading("Opening link…");
   void (async () => {
     try {
       const resolveTweetUrl = await callable("resolveTweetUrl");
+      if (gen !== tweetOpenGen) return;
+      showTweetDialogLoading("Resolving link…");
       const result = await resolveTweetUrl({ url: raw });
+      if (gen !== tweetOpenGen) return;
       const tweetId = result.data?.tweetId;
-      if (tweetId) await openTweetById(tweetId);
-      else statusEl.textContent = "Could not resolve that link.";
+      if (tweetId) await openTweetById(tweetId, { gen });
+      else showTweetDialogError("Could not resolve that link.");
     } catch (err) {
+      if (gen !== tweetOpenGen) return;
       console.error(err);
-      statusEl.textContent = "Could not resolve that link.";
+      showTweetDialogError("Could not resolve that link.");
     }
   })();
 };
@@ -1368,6 +1432,39 @@ function subscribeFeed(uid, { onFirstPaint } = {}) {
     return next;
   }
 
+  function captureFeedScrollAnchor() {
+    const visible = feedEl.querySelectorAll(".card[data-id]");
+    for (const card of visible) {
+      const rect = card.getBoundingClientRect();
+      if (rect.bottom > 48 && rect.top < window.innerHeight) {
+        return { id: card.dataset.id, top: rect.top };
+      }
+    }
+    return {
+      id: null,
+      scrollY: window.scrollY,
+      height: document.documentElement.scrollHeight,
+    };
+  }
+
+  function restoreFeedScrollAnchor(anchor) {
+    if (!anchor) return;
+    if (anchor.id) {
+      const el = feedEl.querySelector(
+        `.card[data-id="${CSS.escape(anchor.id)}"]`
+      );
+      if (!el) return;
+      const delta = el.getBoundingClientRect().top - anchor.top;
+      if (Math.abs(delta) > 1) window.scrollBy(0, delta);
+      return;
+    }
+    if (anchor.scrollY > 0) {
+      const delta =
+        document.documentElement.scrollHeight - (anchor.height || 0);
+      if (delta) window.scrollTo(0, anchor.scrollY + delta);
+    }
+  }
+
   function reorderCards(snap) {
     let previous = null;
     for (const d of snap.docs) {
@@ -1432,6 +1529,8 @@ function subscribeFeed(uid, { onFirstPaint } = {}) {
   }
 
   function applyIncremental(snap) {
+    const anchor = captureFeedScrollAnchor();
+
     for (const change of snap.docChanges()) {
       const id = change.doc.id;
 
@@ -1445,8 +1544,15 @@ function subscribeFeed(uid, { onFirstPaint } = {}) {
         continue;
       }
 
+      const data = change.doc.data();
       const prev = cards.get(id);
-      const next = createPostElement(id, change.doc.data());
+      const nextKey = postRenderKey(id, data);
+      if (prev && prev.dataset.renderKey === nextKey) {
+        // Sync often touches fetchedAt without changing visible content — keep DOM.
+        continue;
+      }
+
+      const next = createPostElement(id, data);
       watchCardVideos(next);
       if (prev) {
         unwatchCardVideos(prev);
@@ -1460,6 +1566,7 @@ function subscribeFeed(uid, { onFirstPaint } = {}) {
     }
 
     reorderCards(snap);
+    restoreFeedScrollAnchor(anchor);
   }
 
   function applyFeedSnapshot(snap) {
@@ -1939,6 +2046,26 @@ function wireUi() {
     });
   }
 
+  // Capture t.co / status links before default navigation or card-body handling.
+  // Native WebView intercept races with card.dataset.url (retweet cards: data-url is
+  // the original tweet, data-id is the retweet — that mismatch caused "random" jumps).
+  feedEl.addEventListener(
+    "click",
+    (event) => {
+      const a = event.target.closest("a[href]");
+      if (!a || !feedEl.contains(a) || a.classList.contains("card-hit")) return;
+      if (a.classList.contains("author-handle")) return;
+      const href = a.getAttribute("href") || "";
+      if (!/t\.co\/|(?:twitter\.com|x\.com)\/[^/]+\/status(?:es)?\//i.test(href)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      window.MyTwitterOpenTweet(href);
+    },
+    true
+  );
+
   feedEl.addEventListener("click", (event) => {
     const likeBtn = event.target.closest(".action-like");
     if (likeBtn && feedEl.contains(likeBtn)) {
@@ -1966,7 +2093,7 @@ function wireUi() {
       return;
     }
 
-    // Card body opens X; skip controls / author / links / video.
+    // Card body opens this feed post (by data-id). Skip controls / author / links / video.
     if (
       event.target.closest(
         "a, button, video, .card-actions, .author-hover, .action-btn, .link-preview"
@@ -1975,10 +2102,10 @@ function wireUi() {
       return;
     }
     const card = event.target.closest(".card");
-    const url = card?.dataset?.url;
-    if (!url) return;
+    const id = card?.dataset?.id;
+    if (!id) return;
     event.preventDefault();
-    location.assign(url);
+    window.MyTwitterOpenTweet(id);
   });
 
   if (finePointer) {

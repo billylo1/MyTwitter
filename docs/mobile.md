@@ -138,7 +138,7 @@ xcodebuild -project MyTwitter.xcodeproj -scheme MyTwitter \
 | Native bridge | `window.MyTwitterNative` (`platform: ios`, `requestPushRegistration`, `setHasSession`, version fields) |
 | Returning session | `UserDefaults` + `mt_session` cookie + at-document-start `has-session` class so chrome/skeletons (and cached posts from the SPA) paint before Auth restore |
 | Export compliance | `ITSAppUsesNonExemptEncryption = false` in `ios/project.yml` → `Info.plist` (keep it in **project.yml** so `xcodegen generate` does not drop it) |
-| Mac (Designed for iPhone) | Opens tall at ~520pt width, then resizable (~390–900pt wide). WKWebView pins to the view edges (not safe area) so no black gap appears under the Mac title bar |
+| Mac (Designed for iPhone) | Opens tall at ~676pt width, then resizable (~507–1170pt wide). WKWebView pins to the view edges (not safe area) so no black gap appears under the Mac title bar |
 | Safe area | WKWebView pinned to `safeAreaLayoutGuide` on iPhone/iPad |
 
 Universal Links for `https://x.com/.../status/...` are not configured yet (follow-up).

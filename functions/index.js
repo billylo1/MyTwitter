@@ -1671,7 +1671,9 @@ exports.getTweet = onCall(
     }
     const includes = res.includes || {};
     const mapped = mapTweetV2(tweet, includes);
-    await postRef.set(mapped, { merge: true });
+    // Do not write into users/{uid}/posts — that collection is the following
+    // timeline. Lookup write-through was inserting unrelated authors into the
+    // live feed and jumping the scroll when t.co / deep links were opened.
     return { post: serializePostForClient(tweetId, mapped) };
   } catch (err) {
     if (err instanceof HttpsError) throw err;

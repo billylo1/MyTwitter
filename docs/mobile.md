@@ -138,6 +138,24 @@ xcodebuild -project MyTwitter.xcodeproj -scheme MyTwitter \
 
 Universal Links for `https://x.com/.../status/...` are not configured yet (follow-up).
 
-## App Store / TestFlight
+## App Store / TestFlight / Play beta (Fastlane)
 
-Not automated in-repo yet. Use Xcode Archive or Homebrew Fastlane when ready. For release builds, switch `aps-environment` to `production` (or use separate Debug/Release entitlements) so FCM uses the production APNs slot.
+From the **repo root**, use Homebrew Fastlane (`/opt/homebrew/bin/fastlane`). Commit and push version bumps before / after store uploads as usual.
+
+```bash
+# Android — Play open testing (beta track). Loads ~/.sidekick-secrets/mytwitter-android-env.sh when present.
+fastlane android beta
+# Optional: VERSION_ALREADY_BUMPED=1 fastlane android beta   # skip versionCode bump
+# Optional: fastlane android beta track:internal
+
+# iOS — TestFlight (bumps CURRENT_PROJECT_VERSION in ios/project.yml + xcodegen)
+fastlane ios beta
+# Optional: fastlane ios beta whats_new:"Offline cold start fixes"
+
+# Both (Android first, then iOS)
+fastlane beta_both
+```
+
+Release builds use `MyTwitterRelease.entitlements` (`aps-environment: production`). Debug keeps `development`. Ensure the APNs `.p8` is uploaded in Firebase for **both** development and production slots.
+
+ASC API key defaults to `~/Xcode/keys/Evergreen_AppConnectAPI_TH4226994B.p8` (override with `APP_STORE_CONNECT_KEY_PATH` / `APP_STORE_CONNECT_KEY_CONTENT`).

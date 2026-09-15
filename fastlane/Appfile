@@ -1,0 +1,22 @@
+# frozen_string_literal: true
+
+# App Store Connect / Apple Developer — Evergreen Labs
+app_identifier("org.evergreenlabs.mytwitter")
+apple_id(ENV.fetch("FASTLANE_USER", "billy@evergreen-labs.org"))
+team_id(ENV.fetch("ASC_TEAM_ID", "X5J5T5UT6J"))
+itc_team_id(ENV.fetch("ASC_ITC_TEAM_ID", "118671754"))
+
+for_platform :ios do
+  app_identifier("org.evergreenlabs.mytwitter")
+end
+
+# Google Play
+for_platform :android do
+  package_name("org.evergreenlabs.mytwitter")
+  json_key_file(
+    ENV["GOOGLE_PLAY_JSON_KEY"] ||
+    ENV["GOOGLE_APPLICATION_CREDENTIALS"] ||
+    ENV["ANDROID_PLAY_STORE_JSON_KEY_PATH"] ||
+    File.expand_path("~/.sidekick-secrets/play-store.json")
+  )
+end

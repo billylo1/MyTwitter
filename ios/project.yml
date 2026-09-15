@@ -35,7 +35,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.evergreenlabs.mytwitter
         PRODUCT_NAME: MyTwitter
-        MARKETING_VERSION: "0.1.0"
+        MARKETING_VERSION: "0.1.3"
         CURRENT_PROJECT_VERSION: "1"
         INFOPLIST_FILE: MyTwitter/Info.plist
         CODE_SIGN_ENTITLEMENTS: MyTwitter/MyTwitter.entitlements
@@ -48,8 +48,10 @@ targets:
       configs:
         Debug:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+          CODE_SIGN_ENTITLEMENTS: MyTwitter/MyTwitter.entitlements
         Release:
           SWIFT_OPTIMIZATION_LEVEL: -O
+          CODE_SIGN_ENTITLEMENTS: MyTwitter/MyTwitterRelease.entitlements
     dependencies:
       - package: firebase-ios-sdk
         product: FirebaseCore
@@ -64,6 +66,8 @@ targets:
       path: MyTwitter/Info.plist
       properties:
         CFBundleDisplayName: MyTwitter
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         SITE_URL: $(SITE_URL)
         SENTRY_DSN: $(SENTRY_DSN)
         UILaunchScreen: {}

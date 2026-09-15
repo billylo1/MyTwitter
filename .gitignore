@@ -37,4 +37,10 @@ ios/DerivedData/
 *.dex
 *.jks
 *.keystore
+*.ipa
+*.dSYM.zip
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output/
 

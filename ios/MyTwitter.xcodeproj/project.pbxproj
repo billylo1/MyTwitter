@@ -31,8 +31,9 @@
 		67B4A57B473C783CE157B045 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
 		6DE11A1641269E991F96C04C /* MyTwitter.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MyTwitter.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8EBBD1FADD1AB9D423146BDF /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		B4AED8656B83290FCD1D7147 /* MyTwitterRelease.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MyTwitterRelease.entitlements; sourceTree = "<group>"; };
 		F67438AF4F9BCB803DBB2CCD /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
-		"TEMP_CF43DEFD-A7C5-4A15-95B4-4FF8D2F12371" /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
+		"TEMP_9C4D1F77-EE48-4DCD-B3DF-9F3695EBD38E" /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -75,6 +76,7 @@
 				5B82901544763E4693C0A5B2 /* Info.plist */,
 				67B4A57B473C783CE157B045 /* MainViewController.swift */,
 				39FE7D1C5C2F3193315CD43D /* MyTwitter.entitlements */,
+				B4AED8656B83290FCD1D7147 /* MyTwitterRelease.entitlements */,
 				49204278760FE39B2768F555 /* PushService.swift */,
 				8EBBD1FADD1AB9D423146BDF /* SceneDelegate.swift */,
 				559566D2BE8936DC3F9F7E19 /* TweetUrlParser.swift */,
@@ -82,10 +84,10 @@
 			path = MyTwitter;
 			sourceTree = "<group>";
 		};
-		"TEMP_3CBD101B-6171-413E-BA66-4BAFDCD97048" /* ios */ = {
+		"TEMP_25394857-1EA7-451B-804F-9C9E42AD1FEB" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_CF43DEFD-A7C5-4A15-95B4-4FF8D2F12371" /* Config.xcconfig */,
+				"TEMP_9C4D1F77-EE48-4DCD-B3DF-9F3695EBD38E" /* Config.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -184,7 +186,7 @@
 /* Begin XCBuildConfiguration section */
 		6534C602ADD94C0AAEE61226 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_CF43DEFD-A7C5-4A15-95B4-4FF8D2F12371" /* Config.xcconfig */;
+			baseConfigurationReference = "TEMP_9C4D1F77-EE48-4DCD-B3DF-9F3695EBD38E" /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -249,7 +251,7 @@
 		};
 		6C48753CB492E1C163C59221 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_CF43DEFD-A7C5-4A15-95B4-4FF8D2F12371" /* Config.xcconfig */;
+			baseConfigurationReference = "TEMP_9C4D1F77-EE48-4DCD-B3DF-9F3695EBD38E" /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -321,7 +323,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.1.3;
 				OTHER_LDFLAGS = "$(inherited) -ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = org.evergreenlabs.mytwitter;
 				PRODUCT_NAME = MyTwitter;
@@ -336,7 +338,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = MyTwitter/MyTwitter.entitlements;
+				CODE_SIGN_ENTITLEMENTS = MyTwitter/MyTwitterRelease.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -347,7 +349,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.1.3;
 				OTHER_LDFLAGS = "$(inherited) -ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = org.evergreenlabs.mytwitter;
 				PRODUCT_NAME = MyTwitter;

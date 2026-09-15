@@ -1,0 +1,2 @@
+Offline cold start: reopen the app without network after one online visit and still see your cached feed.
+Improved membership handling when Firestore is unreachable.

@@ -292,6 +292,32 @@ def assert_no_android_in_ios_release_notes!
   )
 end
 
+def ensure_ios_export_compliance!
+  # Prefer Info.plist ITSAppUsesNonExemptEncryption (see ios/project.yml). This is a
+  # backup for builds already in ASC that still show the missing-compliance warning.
+  UI.message("Ensuring App Store Connect export compliance (usesNonExemptEncryption=false)…")
+  app = Spaceship::ConnectAPI::App.find(APP_IDENTIFIER)
+  UI.user_error!("App Store Connect app not found for #{APP_IDENTIFIER}") unless app
+
+  builds = Spaceship::ConnectAPI::Build.all(
+    app_id: app.id,
+    includes: Spaceship::ConnectAPI::Build::ESSENTIAL_INCLUDES,
+    sort: "-uploadedDate",
+    limit: 10
+  )
+  builds.each do |build|
+    missing = begin
+      build.missing_export_compliance?
+    rescue StandardError
+      false
+    end
+    next unless missing || build.uses_non_exempt_encryption.nil?
+
+    UI.important("Clearing export compliance on build #{build.version} (#{build.id})")
+    build.update(attributes: { uses_non_exempt_encryption: false })
+  end
+end
+
 platform :ios do
   before_all do
     $ios_api_key = configure_app_store_connect_api_key!
@@ -315,6 +341,7 @@ platform :ios do
     args = { skip_waiting_for_build_processing: true }
     args[:changelog] = whats_new if whats_new && !whats_new.to_s.empty?
     upload_to_testflight(args)
+    ensure_ios_export_compliance!
     upload_dsyms_to_sentry!
     clean_build_artifacts
   end
@@ -347,6 +374,7 @@ platform :ios do
       skip_screenshots: true,
       precheck_include_in_app_purchases: false
     )
+    ensure_ios_export_compliance!
     upload_dsyms_to_sentry!
     clean_build_artifacts
   end

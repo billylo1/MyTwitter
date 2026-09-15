@@ -72,6 +72,8 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         SITE_URL: $(SITE_URL)
         SENTRY_DSN: $(SENTRY_DSN)
+        # Standard HTTPS only — answers the App Store Connect export-compliance prompt.
+        ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         UIBackgroundModes:
           - remote-notification

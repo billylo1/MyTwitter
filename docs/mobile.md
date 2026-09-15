@@ -137,6 +137,7 @@ xcodebuild -project MyTwitter.xcodeproj -scheme MyTwitter \
 | Pull to refresh | Same SPA gesture → `syncMyTimeline` |
 | Native bridge | `window.MyTwitterNative` (`platform: ios`, `requestPushRegistration`, `setHasSession`, version fields) |
 | Returning session | `UserDefaults` + `mt_session` cookie + at-document-start `has-session` class so chrome/skeletons (and cached posts from the SPA) paint before Auth restore |
+| Export compliance | `ITSAppUsesNonExemptEncryption = false` in `ios/project.yml` → `Info.plist` (keep it in **project.yml** so `xcodegen generate` does not drop it) |
 | Safe area | WKWebView pinned to `safeAreaLayoutGuide` |
 
 Universal Links for `https://x.com/.../status/...` are not configured yet (follow-up).

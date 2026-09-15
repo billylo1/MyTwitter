@@ -4,8 +4,13 @@ import Darwin
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
 
-    /// Phone-narrow column when running as an iOS app on Mac.
+    /// Narrowest allowed Mac window (still phone-like).
     private static let macMinWidth: CGFloat = 390
+    /// Comfortable launch width — wider than a phone bezel so it isn't cramped.
+    private static let macLaunchWidth: CGFloat = 520
+    /// Allow stretching to a short iPad-ish column.
+    private static let macMaxWidth: CGFloat = 900
+    private static let macMinHeight: CGFloat = 500
 
     func scene(
         _ scene: UIScene,
@@ -32,16 +37,29 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
-    /// iOS-on-Mac: lock to a compact width and use as much vertical space as the display allows.
+    /// iOS-on-Mac: open tall at a comfortable width, then allow free resize within bounds.
     private func configureMacWindowSize(for windowScene: UIWindowScene) {
         guard ProcessInfo.processInfo.isiOSAppOnMac,
               let restrictions = windowScene.sizeRestrictions
         else { return }
 
-        let width = Self.macMinWidth
-        let height = Self.macWindowHeight(fallbackScreen: windowScene.screen)
-        restrictions.minimumSize = CGSize(width: width, height: height)
-        restrictions.maximumSize = CGSize(width: width, height: height)
+        let launchHeight = Self.macWindowHeight(fallbackScreen: windowScene.screen)
+        let launch = CGSize(width: Self.macLaunchWidth, height: launchHeight)
+        // Force the first frame to the launch size (min == max is how iOS-on-Mac
+        // picks an initial geometry). Unlock resizing on the next turn.
+        restrictions.minimumSize = launch
+        restrictions.maximumSize = launch
+
+        DispatchQueue.main.async {
+            restrictions.minimumSize = CGSize(
+                width: Self.macMinWidth,
+                height: Self.macMinHeight
+            )
+            restrictions.maximumSize = CGSize(
+                width: Self.macMaxWidth,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+        }
     }
 
     /// Prefer the host Mac display height; UIScreen often still reports an iPhone size.

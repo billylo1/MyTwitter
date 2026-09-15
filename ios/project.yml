@@ -38,7 +38,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: org.evergreenlabs.mytwitter
         PRODUCT_NAME: MyTwitter
         MARKETING_VERSION: "0.1.5"
-        CURRENT_PROJECT_VERSION: "5"
+        CURRENT_PROJECT_VERSION: "6"
         INFOPLIST_FILE: MyTwitter/Info.plist
         CODE_SIGN_ENTITLEMENTS: MyTwitter/MyTwitter.entitlements
         GENERATE_INFOPLIST_FILE: NO

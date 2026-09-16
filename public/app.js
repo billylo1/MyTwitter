@@ -92,7 +92,7 @@ const appVersionEl = document.getElementById("app-version");
 const ptrIndicatorEl = document.getElementById("ptr-indicator");
 
 /** Web SPA build label (bump when shipping Hosting). Native apps override via bridge. */
-const APP_VERSION = "0.1.16";
+const APP_VERSION = "0.1.18";
 const SESSION_HINT_KEY = "mytwitter:hasSession";
 const LAST_UID_KEY = "mytwitter:lastUid";
 const FEED_CACHE_KEY = "mytwitter:feedCache:v1";
@@ -2010,11 +2010,37 @@ async function loadRssLink() {
   }
 }
 
+function wireScrollTopButton() {
+  const btn = document.getElementById("scroll-top-btn");
+  if (!btn) return;
+
+  const SHOW_AFTER_PX = 400;
+  const updateVisibility = () => {
+    btn.classList.toggle("hidden", readScrollTop() < SHOW_AFTER_PX);
+  };
+
+  window.addEventListener("scroll", updateVisibility, { passive: true });
+  updateVisibility();
+
+  btn.addEventListener("click", () => {
+    const root = scrollRoot();
+    if (typeof root.scrollTo === "function") {
+      root.scrollTo({ top: 0, behavior: "smooth" });
+      if (document.body && document.body !== root) {
+        document.body.scrollTo?.({ top: 0, behavior: "smooth" });
+      }
+      return;
+    }
+    writeScrollTop(0);
+  });
+}
+
 function wireUi() {
   renderAppVersion();
   window.addEventListener("mytwitter:nativeReady", () => renderAppVersion());
   wirePullToRefresh();
   wirePushPromptDialog();
+  wireScrollTopButton();
 
   const dialog = document.getElementById("info-dialog");
   const openBtn = document.getElementById("info-open");

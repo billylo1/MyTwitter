@@ -188,6 +188,16 @@
           Pull down to sync now.
         </p>
       </main>
+
+      <button
+        type="button"
+        id="scroll-top-btn"
+        class="scroll-top-btn hidden"
+        aria-label="Back to top"
+        title="Back to top"
+      >
+        <span aria-hidden="true">↑</span>
+      </button>
     </div>
 
     <script>
@@ -195,7 +205,7 @@
       if ("serviceWorker" in navigator && navigator.onLine !== false) {
         caches.keys().then((keys) => {
           const stale = keys.filter(
-            (k) => k.startsWith("mytwitter-shell-") && k !== "mytwitter-shell-v16"
+            (k) => k.startsWith("mytwitter-shell-") && k !== "mytwitter-shell-v18"
           );
           if (!stale.length) return;
           Promise.all(stale.map((k) => caches.delete(k))).then(() =>
@@ -208,7 +218,7 @@
       }
     </script>
     <script src="/firebase-config.js"></script>
-    <script type="module" src="/app.js?v=0.1.16"></script>
+    <script type="module" src="/app.js?v=0.1.18"></script>
     <div id="author-card" class="author-card hidden" role="dialog" aria-label="Account" aria-modal="true">
       <div class="author-card-top">
         <img id="author-card-avatar" class="author-card-avatar" alt="" width="64" height="64" referrerpolicy="no-referrer" />

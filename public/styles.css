@@ -758,6 +758,31 @@ a.info-btn.rss-btn {
   display: none !important;
 }
 
+.scroll-top-btn {
+  position: fixed;
+  bottom: 1.25rem;
+  right: max(1rem, calc((100vw - var(--max)) / 2 + 1rem));
+  z-index: 30;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+}
+
+.scroll-top-btn:hover,
+.scroll-top-btn:focus-visible {
+  filter: brightness(1.12);
+  outline: none;
+}
+
 .author-card {
   position: fixed;
   z-index: 40;

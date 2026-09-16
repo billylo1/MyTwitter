@@ -142,7 +142,7 @@ Rules: [`firestore.rules`](../firestore.rules) — no world-readable posts.
 - Unauthenticated: auth gate + Sign in with X.
 - Authenticated: feed is always the signed-in user’s own timeline (Firestore query `limit(100)`). No member switcher.
 - Feed listener uses Firestore `docChanges()` to add/update/remove cards without full `innerHTML` rebuilds.
-- Video posts play inline (`<video controls>`); animated GIFs autoplay muted and loop; viewport `IntersectionObserver` pauses off-screen videos. Card tap still opens X except on video controls / links / link previews.
+- Video posts and animated GIFs autoplay muted when in view (`<video controls>` for videos; GIFs loop); viewport `IntersectionObserver` pauses off-screen media. Card tap still opens X except on video controls / links / link previews.
 - Each card has **Like** (X API via `setLiked`) and **Share** (Web Share API, clipboard fallback). Liked state is mirrored under `users/{uid}/likes`.
 - Link preview cards (domain, title, description, thumbnail) when `linkPreview` is present.
 - Header: title, handle, relative refresh time, RSS link (secret URL from `getRssFeedUrl`), info, sign out on one line. Pull-to-refresh on the feed calls `syncMyTimeline`. Info dialog: status, app version, admin-only usage (cumulative + this cycle), invite button (only if `invitesEnabled`; client creates invites with `maxUses: 5`, `days: 14`).

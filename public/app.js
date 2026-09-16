@@ -828,9 +828,7 @@ const videoObserver = new IntersectionObserver(
       if (!(video instanceof HTMLVideoElement)) continue;
       if (entry.isIntersecting) {
         hydrateVideoSrc(video);
-        if (video.classList.contains("media-gif")) {
-          video.play().catch(() => {});
-        }
+        video.play().catch(() => {});
       } else {
         video.pause();
       }

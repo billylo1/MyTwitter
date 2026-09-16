@@ -794,10 +794,22 @@ function scheduleAuthorHide() {
   authorHideTimer = window.setTimeout(hideAuthorCard, 220);
 }
 
-async function openAuthorCard(trigger) {
+function openAuthorCard(trigger) {
   window.clearTimeout(authorHideTimer);
   window.clearTimeout(authorShowTimer);
-  await loadAuthorCard(seedFromTrigger(trigger), trigger);
+  const seed = seedFromTrigger(trigger);
+  // Ignore repeat taps on the same author while the card is already open —
+  // otherwise each tap bumps authorFetchGen and restarts the network call.
+  if (
+    !authorCardEl.classList.contains("hidden") &&
+    authorCardState &&
+    authorCacheKey(authorCardState.handle, authorCardState.id) ===
+      authorCacheKey(seed.handle, seed.id)
+  ) {
+    return;
+  }
+  // Show seed/cache immediately (same as desktop hover); fill bio in background.
+  void loadAuthorCard(seed, trigger).then(() => placeAuthorCard(trigger));
   placeAuthorCard(trigger);
 }
 

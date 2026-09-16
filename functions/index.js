@@ -576,7 +576,7 @@ function mapTweetV1(tweet) {
 
 async function syncViaV2(client, userDoc, sinceId) {
   const params = {
-    exclude: ["replies"],
+    exclude: ["replies", "retweets"],
     max_results: 100,
     "tweet.fields": TWEET_FIELDS,
     expansions: EXPANSIONS,
@@ -651,6 +651,7 @@ async function syncViaV2(client, userDoc, sinceId) {
 async function syncViaV1(client, userDoc, sinceId) {
   const opts = {
     exclude_replies: true,
+    include_rts: false,
     count: 100,
     tweet_mode: "extended",
   };

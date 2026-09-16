@@ -797,7 +797,6 @@ async function notifyFavoritePost(uid, tweetId, mapped) {
       payload: {
         aps: {
           sound: "default",
-          badge: 1,
         },
       },
     },

@@ -1,3 +1,4 @@
-Faster return launches: chrome and recent posts show before sign-in finishes restoring.
-Notification prompt no longer repeats after you already enabled alerts.
-On Mac, the window opens tall at a comfortable width and can be resized.
+Scroll back to the top of the feed with a floating button.
+Push alerts no longer leave a number badge on the app icon.
+Home timeline skips retweets so you see original posts first.
+Feed scroll stays steadier while new posts sync in.

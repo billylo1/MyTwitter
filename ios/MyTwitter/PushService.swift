@@ -19,16 +19,20 @@ final class PushService: NSObject {
         UNUserNotificationCenter.current().delegate = self
         Messaging.messaging().delegate = self
         refreshNotificationsAuthorized()
+        DispatchQueue.main.async {
+            UIApplication.shared.applicationIconBadgeNumber = 0
+        }
     }
 
     func requestPermissionAndRegister() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
             if let error {
                 self.log.error("notification permission error: \(error.localizedDescription, privacy: .public)")
             }
             self.log.info("notification permission granted=\(granted)")
             UserDefaults.standard.set(granted, forKey: Self.prefAuthorized)
             DispatchQueue.main.async {
+                UIApplication.shared.applicationIconBadgeNumber = 0
                 UIApplication.shared.registerForRemoteNotifications()
             }
         }
@@ -85,7 +89,7 @@ extension PushService: UNUserNotificationCenterDelegate {
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        completionHandler([.banner, .sound, .badge])
+        completionHandler([.banner, .sound])
     }
 
     func userNotificationCenter(

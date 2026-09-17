@@ -973,6 +973,31 @@ async function syncUser(userDoc, secrets) {
   return { ...result, videosBackfilled };
 }
 
+/** UTC YYYY-MM-DD for X daily usage buckets. */
+function utcDateKey(d = new Date()) {
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Parse GET /2/usage/tweets daily_project_usage for a UTC calendar day.
+ * OpenAPI shape: { project_id, usage: [{ date, usage }] }
+ */
+function todayPostsFromDailyUsage(dailyProjectUsage, todayKey) {
+  const entries = Array.isArray(dailyProjectUsage?.usage)
+    ? dailyProjectUsage.usage
+    : Array.isArray(dailyProjectUsage)
+      ? dailyProjectUsage
+      : [];
+  for (const entry of entries) {
+    if (!entry) continue;
+    const dateStr = String(entry.date ?? "");
+    if (!dateStr.startsWith(todayKey)) continue;
+    const n = Number(entry.usage ?? entry.tweets_consumed ?? 0);
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+}
+
 async function fetchAndStoreUsage(secrets) {
   if (!secrets.bearerToken) {
     logger.warn("X_BEARER_TOKEN missing; skipping usage refresh");
@@ -981,11 +1006,24 @@ async function fetchAndStoreUsage(secrets) {
 
   try {
     const appOnly = new TwitterApi(secrets.bearerToken);
-    const res = await appOnly.v2.get("usage/tweets");
+    const res = await appOnly.v2.get("usage/tweets", {
+      days: 2,
+      "usage.fields": [
+        "project_usage",
+        "project_cap",
+        "cap_reset_day",
+        "daily_project_usage",
+      ],
+    });
     const data = res?.data || res;
     const cyclePostsRead = Number(data.project_usage ?? 0);
     const projectCap = Number(data.project_cap ?? 0);
     const capResetDay = data.cap_reset_day ?? null;
+    const todayDate = utcDateKey();
+    const todayPostsRead = todayPostsFromDailyUsage(
+      data.daily_project_usage,
+      todayDate
+    );
 
     const publicRef = db.collection("config").doc("public");
     const prevSnap = await publicRef.get();
@@ -1008,6 +1046,8 @@ async function fetchAndStoreUsage(secrets) {
           postsReadCumulative,
           cyclePostsRead,
           priorCyclesPostsRead,
+          todayPostsRead,
+          todayDate,
           projectCap,
           capResetDay,
           pricePerPostUsd: POST_READ_PRICE_USD,
@@ -1022,6 +1062,8 @@ async function fetchAndStoreUsage(secrets) {
       postsRead: postsReadCumulative,
       postsReadCumulative,
       cyclePostsRead,
+      todayPostsRead,
+      todayDate,
       estimatedCostUsd,
       projectCap,
       capResetDay,
@@ -1955,7 +1997,8 @@ exports.syncMyTimeline = onCall(secretOpts, async (request) => {
   }
 
   try {
-    const stats = await syncUser(userDoc, secretsFromEnv());
+    const secrets = secretsFromEnv();
+    const stats = await syncUser(userDoc, secrets);
     await syncRef.set(
       { lastManualSyncAt: FieldValue.serverTimestamp() },
       { merge: true }
@@ -1964,6 +2007,7 @@ exports.syncMyTimeline = onCall(secretOpts, async (request) => {
       { lastRefreshedAt: FieldValue.serverTimestamp() },
       { merge: true }
     );
+    await fetchAndStoreUsage(secrets);
     logger.info("syncMyTimeline done", { uid, ...stats });
     return {
       ok: true,

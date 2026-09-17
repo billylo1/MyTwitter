@@ -412,13 +412,16 @@ function renderUsage(usage) {
     typeof usage.estimatedCostUsd === "number"
       ? usage.estimatedCostUsd
       : total * price;
-  const cyclePosts =
-    typeof usage.cyclePostsRead === "number" ? usage.cyclePostsRead : null;
-  const cycleCost = cyclePosts != null ? cyclePosts * price : null;
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayPosts =
+    typeof usage.todayPostsRead === "number" && usage.todayDate === todayKey
+      ? usage.todayPostsRead
+      : null;
+  const todayCost = todayPosts != null ? todayPosts * price : null;
 
   let text = `${total.toLocaleString()} posts read · ~${formatUsd(cumulativeCost)} cumulative`;
-  if (cyclePosts != null) {
-    text += ` · ${cyclePosts.toLocaleString()} this cycle (~${formatUsd(cycleCost)})`;
+  if (todayPosts != null) {
+    text += ` · ${todayPosts.toLocaleString()} today (~${formatUsd(todayCost)})`;
   }
   usageEl.textContent = text;
 }

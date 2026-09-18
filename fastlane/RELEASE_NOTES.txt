@@ -1,3 +1,9 @@
+Native mobile apps: feed, Sign in with X, and push work without embedding the website.
+X sign-in returns more reliably after you grant access.
+Header shows the last sync clock time next to the info control.
+Info sheet covers status, RSS, and admin invite controls when invites are enabled.
+Media spacing and sheet layouts are cleaner in the feed.
+
 Adjust text size from the info dialog; preference is saved on this device.
 On mobile with a keyboard, Cmd+ and Cmd- change text size.
 Header shows the last sync clock time instead of “just now.”

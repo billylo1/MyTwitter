@@ -1,13 +1,13 @@
 # Android native client
 
-Thin `WebView` shell that loads your Firebase Hosting SPA (`SITE_URL`).
+Fully native **Jetpack Compose** app (minSdk 33 / Android 13+) that talks to Firebase Auth, Firestore, and Cloud Functions directly — no WebView. Package: `org.evergreenlabs.mytwitter`.
 
-**Offline cold start:** Open the app online once so the SPA service worker and Firestore cache can populate. After that, airplane mode + process kill can still show the last feed (media from X CDN may fail). Debug builds no longer force `LOAD_NO_CACHE`.
+**Offline:** Firestore’s persistent cache keeps the last feed available after one online session. Media from X CDN may still fail offline.
 
 ## Requirements
 
-- Android Studio Ladybug+ (or SDK 35 + JDK 17)
-- Device or emulator API 26+
+- Android Studio Ladybug+ (or SDK 36 + JDK 17)
+- Device or emulator **API 33+**
 
 ## Configure
 
@@ -24,9 +24,9 @@ site.url=https://YOUR_PROJECT_ID.web.app
 # sentry.dsn=https://YOUR_PUBLIC_KEY@oXXXX.ingest.us.sentry.io/PROJECT_ID
 ```
 
-`site.url` becomes `BuildConfig.SITE_URL`. `sentry.dsn` (or env `SENTRY_DSN`) becomes `BuildConfig.SENTRY_DSN`. Empty / placeholder / unset ⇒ Sentry stays fully disabled (no init, no Gradle upload). Do not commit `local.properties`.
+`site.url` becomes `BuildConfig.SITE_URL` and the App Links host placeholder. `sentry.dsn` (or env `SENTRY_DSN`) becomes `BuildConfig.SENTRY_DSN`. Empty / placeholder / unset ⇒ Sentry stays fully disabled (no init, no Gradle upload). Do not commit `local.properties`.
 
-Register an Android app in Firebase with package `org.evergreenlabs.mytwitter` and keep [`android/app/google-services.json`](../android/app/google-services.json) in sync (required for FCM).
+Register an Android app in Firebase with package `org.evergreenlabs.mytwitter` and keep [`android/app/google-services.json`](../android/app/google-services.json) in sync (required for FCM / Auth).
 
 ## Run
 
@@ -42,15 +42,17 @@ cd android
 
 | Concern | How |
 |--------|-----|
-| Feed / favorites | Same web SPA |
-| Sign in with X | Custom Tabs → `/oauth/start?client=android` → `mytwitter://auth?handoff=…` → WebView `/?handoff=…` → SPA `exchangeAuthHandoff` |
-| Status / t.co links | Intent filters; SPA `resolveTweetUrl` / `getTweet` / `?tweet=` |
-| Push | FCM when favorited accounts post (incremental sync); tap opens tweet. OS permission is **not** requested on cold start — the SPA shows a soft prompt once the user has favorites (or after they favorite someone), then calls `requestPushRegistration`. The prompt is skipped when OS permission is already granted (`MyTwitterNative.notificationsAuthorized`) or the user previously opted in |
-| Pull to refresh | SPA gesture calls `syncMyTimeline` (per-user sync; feed updates via Firestore) |
-| Native bridge | `window.MyTwitterNative` (`platform`, `requestPushRegistration`, `setHasSession`) |
-| Portrait notch | Root padding for status bar + display cutout |
+| Feed / favorites | Native Firestore listeners on `users/{uid}/posts`, `likes`, `favorites`, `config/public` |
+| Sign in with X | Custom Tabs → `/oauth/start?client=android` (+ optional `invite`) → `mytwitter://auth?handoff=…` → `exchangeAuthHandoff` → `signInWithCustomToken` |
+| Invite join | `https://SITE/?invite=CODE` via verified App Links; invite stored for the next sign-in |
+| Status / t.co | Intent filters + `TweetUrlParser` + `resolveTweetUrl` / `getTweet`; opens in-app detail or external browser |
+| Custom schemes | `mytwitter://auth`, `mytwitter://tweet`, `mytwitter://url` |
+| Push | FCM; tap opens tweet via `data.tweetId`. Favorites-gated soft prompt (no cold-start OS dialog); then `registerDevice`. Channel id `favorites` |
+| Pull to refresh | Compose pull-to-refresh → `syncMyTimeline` |
+| Profile / admin | Info sheet: RSS (`getRssFeedUrl`), sign out; admin usage + `createInvite` when `invitesEnabled` |
+| Theme | Material 3 light/dark following system; brand blue accent |
 
-Deploy Hosting + Functions (`startXAuth`, `xOAuthCallback`, `resolveTweetUrl`, `getTweet`, `registerDevice`, `syncMyTimeline`, `syncTimeline`) and Firestore rules for favorites/devices.
+Deploy Hosting + Functions (`startXAuth`, `xOAuthCallback`, `exchangeAuthHandoff`, `resolveTweetUrl`, `getTweet`, `registerDevice`, `syncMyTimeline`, `syncTimeline`) and Firestore rules for favorites/devices.
 
 ## Play release (AAB)
 
@@ -145,7 +147,7 @@ Invite URLs stay `https://<SITE_URL>/?invite=CODE`.
 
 1. Hosting serves `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json`.
 2. iOS: Associated Domains → SwiftUI `.onContinueUserActivity` stores the invite / opens tweets.
-3. Android: verified App Links → `MainActivity` loads the invite URL into the WebView SPA.
+3. Android: verified App Links → `MainActivity` routes invite / tweet params into `DeepLinkRouter` / `AuthStore`.
 4. Functions echo `invite` on OAuth failure; native `mytwitter://auth` carries `handoff` / `authError` / `invite`.
 
 **Verify after Hosting deploy + a new store/TestFlight/Play build** (deep links need the new binary):

@@ -1,20 +1,33 @@
 package org.evergreenlabs.mytwitter
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
-import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import org.evergreenlabs.mytwitter.services.FunctionsClient
+import org.evergreenlabs.mytwitter.services.PushService
 
 class MyFirebaseMessagingService : FirebaseMessagingService() {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onNewToken(token: String) {
-        Log.i(TAG, "FCM token refreshed")
-        // SPA re-registers after sign-in via requestPushRegistration.
+        Log.i(TAG, "FCM token refreshed len=${token.length}")
+        if (FirebaseAuth.getInstance().currentUser == null) return
+        scope.launch {
+            try {
+                FunctionsClient.shared.registerDevice(token, "android")
+            } catch (e: Exception) {
+                Log.e(TAG, "re-registerDevice failed", e)
+            }
+        }
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
@@ -23,12 +36,15 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             ?: ""
         val title = message.notification?.title
             ?: message.data["title"]
-            ?: "MyTwitter"
+            ?: getString(R.string.notification_default_title)
         val body = message.notification?.body
             ?: message.data["body"]
-            ?: "New post from a favorited account"
+            ?: getString(R.string.notification_default_body)
 
-        ensureChannel()
+        if (AppGraph.isInitialized) {
+            AppGraph.push.ensureFavoritesChannel()
+        }
+
         val open = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             if (tweetId.isNotBlank()) {
@@ -42,7 +58,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        val notification = NotificationCompat.Builder(this, PushService.CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_mytwitter)
             .setContentTitle(title)
             .setContentText(body)
@@ -51,25 +67,11 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
 
-        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify((tweetId.ifBlank { System.currentTimeMillis().toString() }).hashCode(), notification)
-    }
-
-    private fun ensureChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "Favorites",
-            NotificationManager.IMPORTANCE_HIGH,
-        ).apply {
-            description = "Posts from accounts you favorited"
-        }
-        nm.createNotificationChannel(channel)
+        NotificationManagerCompat.from(this)
+            .notify((tweetId.ifBlank { System.currentTimeMillis().toString() }).hashCode(), notification)
     }
 
     companion object {
         private const val TAG = "MyTwitterFCM"
-        const val CHANNEL_ID = "favorites"
     }
 }

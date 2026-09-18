@@ -1,4 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">MyTwitter</string>
+    <string name="loading">Loading…</string>
+    <string name="sign_in_with_x">Sign in with X</string>
+    <string name="gate_message">Sign in with X to view your following feed.</string>
+    <string name="gate_message_invite">You have an invite. Sign in with X to join this private feed.</string>
+    <string name="no_posts_yet">No posts yet</string>
+    <string name="no_posts_hint">Pull to sync your following timeline.</string>
+    <string name="synced_at">Synced at %1$s</string>
+    <string name="info">Info</string>
+    <string name="done">Done</string>
+    <string name="close">Close</string>
+    <string name="share">Share</string>
+    <string name="like">Like</string>
+    <string name="unlike">Unlike</string>
+    <string name="reposted_by">@%1$s reposted</string>
+    <string name="post">Post</string>
+    <string name="tweet_unavailable">Tweet unavailable</string>
+    <string name="follow">Follow</string>
+    <string name="following">Following</string>
+    <string name="favorite">Favorite</string>
+    <string name="unfavorite">Unfavorite</string>
+    <string name="sign_out">Sign out</string>
+    <string name="info_blurb">Your private following feed from X. Posts sync about every 10 minutes; pull to refresh anytime.</string>
+    <string name="version_label">Version %1$s (%2$d)</string>
+    <string name="rss">RSS</string>
+    <string name="share_rss">Share RSS feed URL</string>
+    <string name="open_rss">Open RSS feed</string>
+    <string name="admin">Admin</string>
+    <string name="create_invite">Create invite link</string>
+    <string name="share_invite">Share invite</string>
+    <string name="invite_copied">Invite link copied</string>
+    <string name="push_prompt_title">Get notified when people you favorite post?</string>
+    <string name="push_prompt_body">We\'ll only notify you about accounts you\'ve starred.</string>
+    <string name="enable_notifications">Enable notifications</string>
+    <string name="not_now">Not now</string>
+    <string name="open_settings">Open settings</string>
+    <string name="connecting">Connecting…</string>
+    <string name="channel_favorites_name">Favorites</string>
+    <string name="channel_favorites_desc">Posts from accounts you favorited</string>
+    <string name="notification_default_title">MyTwitter</string>
+    <string name="notification_default_body">New post from a favorited account</string>
 </resources>

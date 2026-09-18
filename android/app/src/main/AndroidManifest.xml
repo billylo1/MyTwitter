@@ -7,7 +7,8 @@
 
     <application
         android:name=".MyTwitterApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -23,7 +24,6 @@
 
         <activity
             android:name=".MainActivity"
-            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|uiMode"
             android:exported="true"
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
@@ -41,13 +41,18 @@
                 <data android:scheme="mytwitter" android:host="auth" />
             </intent-filter>
 
-            <!-- Invite / site Universal App Links (verified) -->
+            <!-- Invite / site Universal App Links (verified).
+                 Exact path="/" only — pathPrefix="/" would also claim /oauth/callback
+                 and steal the Custom Tabs redirect before mytwitter://auth fires. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="mytwitter-feed.web.app" android:pathPrefix="/" />
-                <data android:scheme="https" android:host="mytwitter-feed.firebaseapp.com" android:pathPrefix="/" />
+                <data android:scheme="https" android:host="${siteHost}" android:path="/" />
+                <data
+                    android:scheme="https"
+                    android:host="mytwitter-feed.firebaseapp.com"
+                    android:path="/" />
             </intent-filter>
 
             <!-- Open status links from other apps (chooser; not verified App Links) -->

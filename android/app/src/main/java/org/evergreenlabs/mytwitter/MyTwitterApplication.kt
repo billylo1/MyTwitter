@@ -2,11 +2,14 @@ package org.evergreenlabs.mytwitter
 
 import android.app.Application
 import android.util.Log
+import com.google.firebase.FirebaseApp
 import io.sentry.android.core.SentryAndroid
 
 class MyTwitterApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        FirebaseApp.initializeApp(this)
+        AppGraph.init(this)
 
         val dsn = BuildConfig.SENTRY_DSN.trim()
         if (dsn.isEmpty()) {
@@ -19,7 +22,6 @@ class MyTwitterApplication : Application() {
             options.environment = BuildConfig.BUILD_TYPE
             options.release =
                 "${BuildConfig.APPLICATION_ID}@${BuildConfig.VERSION_NAME}+${BuildConfig.VERSION_CODE}"
-            // 100% in debug; trim for production traffic later
             options.tracesSampleRate = if (BuildConfig.DEBUG) 1.0 else 0.2
             options.isAnrEnabled = true
             options.isDebug = BuildConfig.DEBUG

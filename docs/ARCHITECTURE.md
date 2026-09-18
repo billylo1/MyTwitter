@@ -40,8 +40,8 @@ flowchart LR
 
 | Piece | Role |
 |-------|------|
-| [`public/`](../public/) | Static SPA: Auth gate, own feed, likes/share, favorites, author card, info dialog; admin-only usage. Firestore uses **persistent IndexedDB cache** so a reload offline can still show the last feed. A **service worker** (`sw.js`) caches the app shell + Firebase CDN modules so WebView cold starts can boot offline after one online visit |
-| `android/` | Native WebView shell (Android): loads `SITE_URL`, Custom Tabs OAuth, verified App Links for Hosting invite URLs, status-link intents, FCM; uses `LOAD_CACHE_ELSE_NETWORK` when offline; returning-user session hint (`hasSession` prefs + `mt_session` cookie + document-start `has-session`) so the SPA paints chrome/cached feed before Auth restore; optional Sentry via gitignored `sentry.dsn` / `SENTRY_DSN` |
+| [`public/`](../public/) | Static SPA: Auth gate, own feed, likes/share, favorites, author card, info dialog; admin-only usage. Firestore uses **persistent IndexedDB cache** so a reload offline can still show the last feed. A **service worker** (`sw.js`) caches the app shell + Firebase CDN modules so browser cold starts can boot offline after one online visit |
+| `android/` | Native **Jetpack Compose** client (minSdk 33): Firebase Auth / Firestore / Functions directly (no WebView). Custom Tabs OAuth (`client=android` → `mytwitter://auth?handoff=…` → `exchangeAuthHandoff`), verified App Links for invites, status-link intents, FCM; pull-to-refresh via `syncMyTimeline`; optional Sentry via gitignored `sentry.dsn` / `SENTRY_DSN` |
 | `ios/` | Native **SwiftUI** client (iOS 18+): Firebase Auth / Firestore / Functions directly (no WebView). `ASWebAuthenticationSession` OAuth (`client=ios` → `mytwitter://auth?handoff=…` → `exchangeAuthHandoff`), FCM+APNs, Universal Links for invites, pull-to-refresh via `syncMyTimeline`; optional Sentry via gitignored `Config.xcconfig`; Release uses production APNs entitlements |
 | [`fastlane/`](../fastlane/) | Homebrew Fastlane: `android beta` (Play open testing), `ios beta` (TestFlight), `beta_both` (Android then iOS). Secrets stay in env / `~/.sidekick-secrets` / ASC key path — not in git |
 | `public/firebase-config.js` | Local Firebase web config (`window.FIREBASE_CONFIG`; gitignored) |
@@ -90,8 +90,8 @@ Hosting also sets `Referrer-Policy: no-referrer`. Firestore database location is
 
 ## Auth and membership
 
-1. User opens site (optionally `?invite=CODE`). On mobile, Hosting Universal/App Links open the installed app when configured (iOS native SwiftUI / Android WebView).
-2. **Sign in with X** → Hosting `/oauth/start` → `startXAuth` stores PKCE verifier (+ optional `invite`) in `oauthSessions/{state}` and redirects to X. The web SPA also persists invite in session/local storage for retries; the iOS app stores a pending invite in `UserDefaults`.
+1. User opens site (optionally `?invite=CODE`). On mobile, Hosting Universal/App Links open the installed native apps when configured (iOS SwiftUI / Android Compose).
+2. **Sign in with X** → Hosting `/oauth/start` → `startXAuth` stores PKCE verifier (+ optional `invite`) in `oauthSessions/{state}` and redirects to X. The web SPA also persists invite in session/local storage for retries; native apps store a pending invite (iOS `UserDefaults` / Android SharedPreferences).
 3. X redirects to `/oauth/callback` → `xOAuthCallback`:
    - Exchanges code for access + refresh tokens.
    - Allows join if already a member, handle/`xUserId` on `config/allowlist`, or (when `invitesEnabled`) a valid invite.
@@ -101,7 +101,7 @@ Hosting also sets `Referrer-Policy: no-referrer`. Firestore database location is
    - Starts a **fire-and-forget first sync** for that user (in addition to the 10-minute schedule).
 4. Returning members re-run the same X OAuth path (refreshes API tokens + session).
 
-**Admin:** first allowlist handle from bootstrap (`ADMIN_HANDLE`) gets `role: admin` on first join if not already set. When invites are enabled, admins call `createInvite` from the info dialog (web) or info sheet (iOS).
+**Admin:** first allowlist handle from bootstrap (`ADMIN_HANDLE`) gets `role: admin` on first join if not already set. When invites are enabled, admins call `createInvite` from the info dialog (web) or info sheet (iOS / Android).
 
 ## Data model
 
@@ -150,7 +150,7 @@ Rules: [`firestore.rules`](../firestore.rules) — no world-readable posts.
 - Each card has **Like** (`setLiked`) and **Share**. Liked state is mirrored under `users/{uid}/likes`.
 - Header: title, last sync time, RSS link (`getRssFeedUrl`), info. Pull-to-refresh calls `syncMyTimeline`. Info dialog: status, app version, text size, admin usage, invite button when `invitesEnabled`.
 - Author profile card: Follow / Unfollow (`getAuthorCard`, `setFollowing`) and **Favorite** toggle (`users/{uid}/favorites`).
-- Deep links: `?tweet=` and `window.MyTwitterOpenTweet` (Android WebView bridge). Returning-user cold start paints from `localStorage` + session hint cookies.
+- Deep links: `?tweet=` and `window.MyTwitterOpenTweet` (browser / legacy bridge). Returning-user cold start paints from `localStorage` + session hint cookies.
 
 ### iOS native (SwiftUI)
 
@@ -159,9 +159,12 @@ Rules: [`firestore.rules`](../firestore.rules) — no world-readable posts.
 - Feed: four Firestore listeners (`posts`, `likes`, `favorites`, `config/public`); Dynamic Type instead of a custom font-scale control.
 - Deep links: `mytwitter://` and Universal Links routed in-app (no WebView).
 
-### Android
+### Android native (Jetpack Compose)
 
-- Remains a WebView shell over the SPA (see [mobile.md](mobile.md)).
+- Same product surface as iOS/SPA: auth gate, feed, like/share, tweet detail, author card (follow/favorite), info sheet (RSS, admin usage/invite), pull-to-refresh, favorites-gated push prompt.
+- Auth: Custom Tabs + `exchangeAuthHandoff` + Firebase Auth; membership gated on `members/{uid}` (ignores cached negatives when offline).
+- Feed: four Firestore listeners (`posts`, `likes`, `favorites`, `config/public`); Material 3 light/dark; ExoPlayer for muted looping video.
+- Deep links: `mytwitter://` and verified App Links routed in-app (no WebView / JS bridge). See [mobile.md](mobile.md).
 
 ## Secrets (Cloud Functions)
 

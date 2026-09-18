@@ -72,6 +72,7 @@ function getOauthCallbackUrl() {
 }
 
 const OAUTH_SESSION_TTL_MS = 10 * 60 * 1000;
+const AUTH_HANDOFF_TTL_MS = 5 * 60 * 1000;
 
 const TWEET_FIELDS = [
   "created_at",
@@ -1375,8 +1376,18 @@ exports.xOAuthCallback = onRequest(
         handle: normalizeHandle(handle),
       });
       if (oauthClientHint === "android" || oauthClientHint === "ios") {
+        // Custom tokens are too long for reliable custom-scheme / ASWebAuth
+        // callback URLs. Store briefly and redirect with a short handoff id.
+        const handoffId = randomToken(18);
+        await db.collection("authHandoffs").doc(handoffId).set({
+          token: customToken,
+          uid: xUserId,
+          client: oauthClientHint,
+          createdAt: FieldValue.serverTimestamp(),
+          expiresAt: Timestamp.fromMillis(Date.now() + AUTH_HANDOFF_TTL_MS),
+        });
         const u = new URL("mytwitter://auth");
-        u.searchParams.set("token", customToken);
+        u.searchParams.set("handoff", handoffId);
         res.redirect(302, u.toString());
         return;
       }
@@ -1439,6 +1450,43 @@ exports.createInvite = onCall(
       maxUses,
       expiresAt: expiresAt.toDate().toISOString(),
     };
+  })
+);
+
+/** Exchange a short native OAuth handoff id for a Firebase custom token. */
+exports.exchangeAuthHandoff = onCall(
+  { region: "us-central1" },
+  withSentryCall("exchangeAuthHandoff", async (request) => {
+    const handoffId = String(request.data?.handoff || "").trim();
+    if (!handoffId || handoffId.length > 64) {
+      throw new HttpsError("invalid-argument", "Missing handoff");
+    }
+    const ref = db.collection("authHandoffs").doc(handoffId);
+    // Replay-safe: iOS may deliver the callback twice (ASWebAuth + openURL),
+    // which can race two exchanges. Keep the token until expiresAt.
+    const token = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) {
+        throw new HttpsError("not-found", "Invalid or expired handoff");
+      }
+      const data = snap.data() || {};
+      if (
+        data.expiresAt &&
+        data.expiresAt.toMillis &&
+        data.expiresAt.toMillis() < Date.now()
+      ) {
+        tx.delete(ref);
+        throw new HttpsError("deadline-exceeded", "Handoff expired");
+      }
+      if (!data.token || typeof data.token !== "string") {
+        throw new HttpsError("internal", "Handoff missing token");
+      }
+      if (!data.consumedAt) {
+        tx.update(ref, { consumedAt: FieldValue.serverTimestamp() });
+      }
+      return data.token;
+    });
+    return { token };
   })
 );
 

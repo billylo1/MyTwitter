@@ -34,6 +34,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Short-lived OAuth custom-token handoffs — Admin SDK only.
+    match /authHandoffs/{id} {
+      allow read, write: if false;
+    }
+
     // Own membership only (no family directory).
     match /members/{memberId} {
       allow read: if memberEnabled() && isOwner(memberId);

@@ -1,6 +1,7 @@
 import UIKit
 import WebKit
 import SafariServices
+import AuthenticationServices
 import OSLog
 
 final class MainViewController: UIViewController {
@@ -8,6 +9,10 @@ final class MainViewController: UIViewController {
     private var webView: WKWebView!
     private let siteURL = AppConfig.siteURL
     private var oauthSafari: SFSafariViewController?
+    private var authSession: ASWebAuthenticationSession?
+    /// Dedupes ASWebAuthenticationSession completion + scene openURL (both fire).
+    private var lastAuthReturnKey: String?
+    private var lastAuthReturnAt: Date?
     private var pendingTweetOpen: String?
     private let launchElapsed = ProcessInfo.processInfo.systemUptime
 
@@ -137,7 +142,7 @@ final class MainViewController: UIViewController {
     }
 
     /// Bump when Hosting ships shell/JS fixes that must not stay stuck in WK HTTP cache.
-    private static let shellCacheEpoch = "0.1.23"
+    private static let shellCacheEpoch = "0.1.29"
 
     private func loadSite() {
         guard let url = URL(string: siteURL) else {
@@ -266,21 +271,41 @@ final class MainViewController: UIViewController {
     }
 
     private func applyAuthReturn(_ url: URL) {
+        let incoming = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let handoff = incoming.first(where: { $0.name == "handoff" })?.value
+        let token = incoming.first(where: { $0.name == "token" })?.value
+        let authError = incoming.first(where: { $0.name == "authError" })?.value
+        let invite = incoming.first(where: { $0.name == "invite" })?.value
+        let dedupeKey = [handoff, token, authError, url.absoluteString]
+            .compactMap { $0?.isEmpty == false ? $0 : nil }
+            .first ?? url.absoluteString
+        if dedupeKey == lastAuthReturnKey,
+           let at = lastAuthReturnAt,
+           Date().timeIntervalSince(at) < 8
+        {
+            log.info("Ignoring duplicate OAuth return")
+            return
+        }
+        lastAuthReturnKey = dedupeKey
+        lastAuthReturnAt = Date()
+
         var comps = URLComponents(string: siteURL)
         var items: [URLQueryItem] = []
-        let incoming = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        if let token = incoming.first(where: { $0.name == "token" })?.value, !token.isEmpty {
+        if let token, !token.isEmpty {
             items.append(URLQueryItem(name: "token", value: token))
         }
-        if let err = incoming.first(where: { $0.name == "authError" })?.value, !err.isEmpty {
-            items.append(URLQueryItem(name: "authError", value: err))
+        if let handoff, !handoff.isEmpty {
+            items.append(URLQueryItem(name: "handoff", value: handoff))
         }
-        if let invite = incoming.first(where: { $0.name == "invite" })?.value, !invite.isEmpty {
+        if let authError, !authError.isEmpty {
+            items.append(URLQueryItem(name: "authError", value: authError))
+        }
+        if let invite, !invite.isEmpty {
             items.append(URLQueryItem(name: "invite", value: invite))
         }
         comps?.queryItems = items.isEmpty ? nil : items
         guard let target = comps?.url else { return }
-        log.info("OAuth return → WebView")
+        log.info("OAuth return → WebView \(target.absoluteString, privacy: .public)")
         syncSessionCookie()
         var request = URLRequest(url: target)
         request.cachePolicy = .reloadIgnoringLocalCacheData
@@ -356,15 +381,45 @@ final class MainViewController: UIViewController {
 
     private func presentOAuthSafari(url: URL) {
         dismissOAuthSafariIfNeeded()
-        let safari = SFSafariViewController(url: url)
-        safari.dismissButtonStyle = .close
-        safari.delegate = self
-        oauthSafari = safari
-        log.info("Opening OAuth Safari: \(url.absoluteString, privacy: .public)")
-        present(safari, animated: true)
+        authSession?.cancel()
+        let session = ASWebAuthenticationSession(
+            url: url,
+            callbackURLScheme: "mytwitter"
+        ) { [weak self] callbackURL, error in
+            guard let self else { return }
+            self.authSession = nil
+            if let error {
+                let ns = error as NSError
+                if ns.domain == ASWebAuthenticationSessionError.errorDomain,
+                   ns.code == ASWebAuthenticationSessionError.canceledLogin.rawValue
+                {
+                    self.log.info("OAuth cancelled by user")
+                } else {
+                    self.log.error("OAuth session failed: \(error.localizedDescription, privacy: .public)")
+                }
+                return
+            }
+            guard let callbackURL else {
+                self.log.error("OAuth session returned empty callback URL")
+                return
+            }
+            DispatchQueue.main.async {
+                self.applyAuthReturn(callbackURL)
+            }
+        }
+        session.presentationContextProvider = self
+        session.prefersEphemeralWebBrowserSession = false
+        authSession = session
+        log.info("Opening OAuth ASWebAuth: \(url.absoluteString, privacy: .public)")
+        if !session.start() {
+            log.error("ASWebAuthenticationSession failed to start")
+            authSession = nil
+        }
     }
 
     private func dismissOAuthSafariIfNeeded() {
+        authSession?.cancel()
+        authSession = nil
         if let safari = oauthSafari {
             safari.dismiss(animated: true)
             oauthSafari = nil
@@ -667,6 +722,12 @@ extension MainViewController: SFSafariViewControllerDelegate {
         if oauthSafari === controller {
             oauthSafari = nil
         }
+    }
+}
+
+extension MainViewController: ASWebAuthenticationPresentationContextProviding {
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        view.window ?? ASPresentationAnchor()
     }
 }
 

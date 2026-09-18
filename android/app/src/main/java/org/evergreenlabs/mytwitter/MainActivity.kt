@@ -427,9 +427,11 @@ class MainActivity : AppCompatActivity() {
         when {
             uri.scheme == "mytwitter" && uri.host == "auth" -> {
                 val token = uri.getQueryParameter("token")
+                val handoff = uri.getQueryParameter("handoff")
                 val authError = uri.getQueryParameter("authError")
                 val invite = uri.getQueryParameter("invite")
                 val target = Uri.parse(siteUrl).buildUpon().apply {
+                    if (!handoff.isNullOrBlank()) appendQueryParameter("handoff", handoff)
                     if (!token.isNullOrBlank()) appendQueryParameter("token", token)
                     if (!authError.isNullOrBlank()) appendQueryParameter("authError", authError)
                     if (!invite.isNullOrBlank()) appendQueryParameter("invite", invite)

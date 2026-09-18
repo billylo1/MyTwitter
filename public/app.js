@@ -92,7 +92,7 @@ const appVersionEl = document.getElementById("app-version");
 const ptrIndicatorEl = document.getElementById("ptr-indicator");
 
 /** Web SPA build label (bump when shipping Hosting). Native apps override via bridge. */
-const APP_VERSION = "0.1.27";
+const APP_VERSION = "0.1.29";
 const SESSION_HINT_KEY = "mytwitter:hasSession";
 const LAST_UID_KEY = "mytwitter:lastUid";
 const FEED_CACHE_KEY = "mytwitter:feedCache:v1";
@@ -2049,6 +2049,7 @@ function showAuthError(code) {
 async function consumeAuthParams() {
   const params = new URLSearchParams(location.search);
   const token = params.get("token");
+  const handoff = params.get("handoff");
   const authError = params.get("authError");
   const invite = params.get("invite");
   const tweet = params.get("tweet");
@@ -2068,7 +2069,29 @@ async function consumeAuthParams() {
     history.replaceState({}, "", next);
   }
 
-  if (token) {
+  if (handoff) {
+    params.delete("handoff");
+    const next = `${location.pathname}${params.toString() ? `?${params}` : ""}${location.hash}`;
+    history.replaceState({}, "", next);
+    try {
+      const exchange = await callable("exchangeAuthHandoff");
+      const result = await exchange({ handoff });
+      const customToken = result?.data?.token;
+      if (!customToken) {
+        throw new Error("empty_handoff_token");
+      }
+      await signInWithCustomToken(auth, customToken);
+    } catch (err) {
+      // Duplicate WebView loads can race two exchanges; the first may already
+      // have signed us in before the second fails.
+      if (auth.currentUser) {
+        console.warn("[auth] handoff exchange failed after sign-in; ignoring", err);
+        return;
+      }
+      console.error("[auth] handoff exchange failed", err);
+      showAuthError("oauth_failed");
+    }
+  } else if (token) {
     params.delete("token");
     const next = `${location.pathname}${params.toString() ? `?${params}` : ""}${location.hash}`;
     history.replaceState({}, "", next);

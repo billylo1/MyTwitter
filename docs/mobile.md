@@ -43,7 +43,7 @@ cd android
 | Concern | How |
 |--------|-----|
 | Feed / favorites | Same web SPA |
-| Sign in with X | Custom Tabs → `/oauth/start?client=android` → `mytwitter://auth?token=…` → WebView |
+| Sign in with X | Custom Tabs → `/oauth/start?client=android` → `mytwitter://auth?handoff=…` → WebView `/?handoff=…` → SPA `exchangeAuthHandoff` |
 | Status / t.co links | Intent filters; SPA `resolveTweetUrl` / `getTweet` / `?tweet=` |
 | Push | FCM when favorited accounts post (incremental sync); tap opens tweet. OS permission is **not** requested on cold start — the SPA shows a soft prompt once the user has favorites (or after they favorite someone), then calls `requestPushRegistration`. The prompt is skipped when OS permission is already granted (`MyTwitterNative.notificationsAuthorized`) or the user previously opted in |
 | Pull to refresh | SPA gesture calls `syncMyTimeline` (per-user sync; feed updates via Firestore) |
@@ -130,7 +130,7 @@ xcodebuild -project MyTwitter.xcodeproj -scheme MyTwitter \
 | Concern | How |
 |--------|-----|
 | Feed / favorites | Same web SPA |
-| Sign in with X | `SFSafariViewController` → `/oauth/start?client=ios` (+ optional `invite`) → `mytwitter://auth?token=…` → WKWebView |
+| Sign in with X | `ASWebAuthenticationSession` → `/oauth/start?client=ios` (+ optional `invite`) → `mytwitter://auth?handoff=…` → WebView loads `/?handoff=…` → SPA `exchangeAuthHandoff` → `signInWithCustomToken` |
 | Invite join (mobile) | `https://SITE/?invite=CODE` opens the app via Universal Links (Associated Domains) when installed; SPA persists invite across OAuth retries; auth errors keep `invite` |
 | Status / t.co (in-app) | Navigation policy + `TweetUrlParser` / SPA `MyTwitterOpenTweet` |
 | Custom schemes | `mytwitter://auth`, `mytwitter://tweet`, `mytwitter://url` |

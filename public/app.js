@@ -92,7 +92,7 @@ const appVersionEl = document.getElementById("app-version");
 const ptrIndicatorEl = document.getElementById("ptr-indicator");
 
 /** Web SPA build label (bump when shipping Hosting). Native apps override via bridge. */
-const APP_VERSION = "0.1.21";
+const APP_VERSION = "0.1.26";
 const SESSION_HINT_KEY = "mytwitter:hasSession";
 const LAST_UID_KEY = "mytwitter:lastUid";
 const FEED_CACHE_KEY = "mytwitter:feedCache:v1";
@@ -2194,7 +2194,10 @@ function wireUi() {
     location.href = startAuthUrl();
   });
 
-  signOutBtn.addEventListener("click", () => signOut(auth));
+  signOutBtn.addEventListener("click", () => {
+    dialog?.close();
+    signOut(auth);
+  });
 
   if (authorCardEl && authorCardFollow) {
     authorCardEl.addEventListener("mouseenter", () => {

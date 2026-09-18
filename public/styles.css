@@ -763,7 +763,6 @@ a.info-btn.rss-btn {
   }
 }
 
-.action-btn.is-busy,
 .follow-btn.is-busy,
 .favorite-btn.is-busy {
   position: relative;
@@ -771,28 +770,25 @@ a.info-btn.rss-btn {
   pointer-events: none;
 }
 
-.action-btn.is-busy:disabled,
 .follow-btn.is-busy:disabled,
 .favorite-btn.is-busy:disabled {
   opacity: 0.9;
 }
 
-.action-btn.is-busy > *,
 .follow-btn.is-busy > *,
 .favorite-btn.is-busy > * {
   visibility: hidden;
 }
 
-.action-btn.is-busy::after,
 .follow-btn.is-busy::after,
 .favorite-btn.is-busy::after {
   content: "";
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 0.95rem;
-  height: 0.95rem;
-  margin: -0.475rem 0 0 -0.475rem;
+  width: 1rem;
+  height: 1rem;
+  margin: -0.5rem 0 0 -0.5rem;
   border: 2px solid currentColor;
   border-right-color: transparent;
   border-radius: 50%;
@@ -800,23 +796,11 @@ a.info-btn.rss-btn {
   animation: btn-spin 0.7s linear infinite;
 }
 
-.action-like.is-busy.is-liked::after {
-  color: #f91880;
-}
-
 .favorite-btn.is-busy.is-favorited::after {
   color: #f5a524;
 }
 
-.follow-btn.is-busy::after,
-.favorite-btn.is-busy::after {
-  width: 1rem;
-  height: 1rem;
-  margin: -0.5rem 0 0 -0.5rem;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .action-btn.is-busy::after,
   .follow-btn.is-busy::after,
   .favorite-btn.is-busy::after {
     animation: none;

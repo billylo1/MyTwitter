@@ -92,7 +92,7 @@ const appVersionEl = document.getElementById("app-version");
 const ptrIndicatorEl = document.getElementById("ptr-indicator");
 
 /** Web SPA build label (bump when shipping Hosting). Native apps override via bridge. */
-const APP_VERSION = "0.1.20";
+const APP_VERSION = "0.1.21";
 const SESSION_HINT_KEY = "mytwitter:hasSession";
 const LAST_UID_KEY = "mytwitter:lastUid";
 const FEED_CACHE_KEY = "mytwitter:feedCache:v1";
@@ -1444,7 +1444,6 @@ async function toggleLike(card, btn) {
   if (!tweetId || btn.disabled) return;
   const nextLiked = !btn.classList.contains("is-liked");
   setLikeButtonState(btn, nextLiked);
-  setButtonBusy(btn, true);
   btn.disabled = true;
   try {
     const setLiked = await callable("setLiked");
@@ -1461,7 +1460,6 @@ async function toggleLike(card, btn) {
     btn.title = message;
     statusEl.textContent = message;
   } finally {
-    setButtonBusy(btn, false);
     btn.disabled = false;
   }
 }

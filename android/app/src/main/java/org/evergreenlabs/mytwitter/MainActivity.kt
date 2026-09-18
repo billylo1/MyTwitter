@@ -332,10 +332,9 @@ class MainActivity : AppCompatActivity() {
     private fun handleNavigation(uri: Uri): Boolean {
         val host = uri.host?.lowercase() ?: return false
         val path = uri.path ?: ""
-        val siteHost = Uri.parse(siteUrl).host?.lowercase()
 
         // Keep first-party Hosting navigations in the WebView, except OAuth start.
-        if (host == siteHost) {
+        if (isFirstPartyHost(host)) {
             if (path.startsWith("/oauth/start")) {
                 openOAuthCustomTab(uri)
                 return true
@@ -408,18 +407,40 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun isFirstPartyHost(host: String?): Boolean {
+        val siteHost = Uri.parse(siteUrl).host?.lowercase() ?: return false
+        val h = host?.lowercase() ?: return false
+        if (h == siteHost) return true
+        if (siteHost.endsWith(".web.app")) {
+            val base = siteHost.removeSuffix(".web.app")
+            if (h == "$base.firebaseapp.com") return true
+        }
+        if (siteHost.endsWith(".firebaseapp.com")) {
+            val base = siteHost.removeSuffix(".firebaseapp.com")
+            if (h == "$base.web.app") return true
+        }
+        return false
+    }
+
     private fun handleIncomingIntent(intent: Intent?): Boolean {
         val uri = intent?.data ?: return false
         when {
             uri.scheme == "mytwitter" && uri.host == "auth" -> {
                 val token = uri.getQueryParameter("token")
                 val authError = uri.getQueryParameter("authError")
+                val invite = uri.getQueryParameter("invite")
                 val target = Uri.parse(siteUrl).buildUpon().apply {
                     if (!token.isNullOrBlank()) appendQueryParameter("token", token)
                     if (!authError.isNullOrBlank()) appendQueryParameter("authError", authError)
+                    if (!invite.isNullOrBlank()) appendQueryParameter("invite", invite)
                 }.build()
                 Log.i(TAG, "OAuth return → WebView")
                 loadSite(target.toString())
+                return true
+            }
+            isFirstPartyHost(uri.host) && (uri.scheme == "https" || uri.scheme == "http") -> {
+                Log.i(TAG, "App Link → WebView $uri")
+                loadSite(uri.toString())
                 return true
             }
             uri.scheme == "mytwitter" && uri.host == "tweet" -> {

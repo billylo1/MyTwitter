@@ -41,8 +41,8 @@ flowchart LR
 | Piece | Role |
 |-------|------|
 | [`public/`](../public/) | Static SPA: Auth gate, own feed, likes/share, favorites, author card, info dialog; admin-only usage. Firestore uses **persistent IndexedDB cache** so a reload offline can still show the last feed. A **service worker** (`sw.js`) caches the app shell + Firebase CDN modules so WebView cold starts can boot offline after one online visit |
-| `android/` | Native WebView shell (Android): loads `SITE_URL`, Custom Tabs OAuth, status-link intents, FCM; uses `LOAD_CACHE_ELSE_NETWORK` when offline; returning-user session hint (`hasSession` prefs + `mt_session` cookie + document-start `has-session`) so the SPA paints chrome/cached feed before Auth restore; optional Sentry via gitignored `sentry.dsn` / `SENTRY_DSN` |
-| `ios/` | Native WKWebView shell (iOS): loads `SITE_URL`, SFSafariViewController OAuth (`client=ios`), FCM+APNs, `mytwitter://` deep links; same returning-user session hint (UserDefaults + cookie + `WKUserScript` at document start); optional Sentry via gitignored `Config.xcconfig`; Release uses production APNs entitlements |
+| `android/` | Native WebView shell (Android): loads `SITE_URL`, Custom Tabs OAuth, verified App Links for Hosting invite URLs, status-link intents, FCM; uses `LOAD_CACHE_ELSE_NETWORK` when offline; returning-user session hint (`hasSession` prefs + `mt_session` cookie + document-start `has-session`) so the SPA paints chrome/cached feed before Auth restore; optional Sentry via gitignored `sentry.dsn` / `SENTRY_DSN` |
+| `ios/` | Native WKWebView shell (iOS): loads `SITE_URL`, SFSafariViewController OAuth (`client=ios`), FCM+APNs, `mytwitter://` deep links + Universal Links for Hosting invite URLs; same returning-user session hint (UserDefaults + cookie + `WKUserScript` at document start); optional Sentry via gitignored `Config.xcconfig`; Release uses production APNs entitlements |
 | [`fastlane/`](../fastlane/) | Homebrew Fastlane: `android beta` (Play open testing), `ios beta` (TestFlight), `beta_both` (Android then iOS). Secrets stay in env / `~/.sidekick-secrets` / ASC key path — not in git |
 | `public/firebase-config.js` | Local Firebase web config (`window.FIREBASE_CONFIG`; gitignored) |
 | Hosting rewrites | `/oauth/start` → `startXAuth`, `/oauth/callback` → `xOAuthCallback`, `/feed.xml` → `feedRss` |
@@ -56,14 +56,14 @@ flowchart LR
 | Export | Type | Purpose |
 |--------|------|---------|
 | `startXAuth` | HTTP | OAuth start + PKCE session; optional `?client=android` or `?client=ios` for native return |
-| `xOAuthCallback` | HTTP | Token exchange, membership, custom token, post-OAuth sync; native clients redirect to `mytwitter://auth` |
+| `xOAuthCallback` | HTTP | Token exchange, membership, custom token, post-OAuth sync; native clients redirect to `mytwitter://auth`; failed auth echoes `invite` when present |
 | `createInvite` | Callable | Admin invite links (requires `invitesEnabled`) |
 | `getRssFeedUrl` | Callable | Mint/return per-member secret RSS URL (`users/{uid}.rssToken`) |
 | `feedRss` | HTTP `?token=` | RSS 2.0 of that member’s following timeline (unlisted; token is the credential) |
 | `getAuthorCard` | Callable | Profile + `connection_status` |
 | `setFollowing` | Callable | Follow / unfollow on X |
 | `setLiked` | Callable | Like / unlike on X + Firestore mirror |
-| `resolveTweetUrl` | Callable | Expand `t.co` / parse status URLs → tweet id |
+| `resolveTweetUrl` | Callable | Expand `t.co` / parse status URLs → tweet id; if no status id, returns `resolvedUrl` for external/article open |
 | `getTweet` | Callable | Fetch a tweet via X API for deep links / t.co (dialog only — does **not** write into the following `posts` feed) |
 | `registerDevice` | Callable | Store FCM device token under `users/{uid}/devices` |
 | `syncMyTimeline` | Callable | Authenticated pull-to-refresh: sync only the signed-in user (60s cooldown) |
@@ -89,14 +89,14 @@ Hosting also sets `Referrer-Policy: no-referrer`. Firestore database location is
 
 ## Auth and membership
 
-1. User opens site (optionally `?invite=CODE`).
-2. **Sign in with X** → Hosting `/oauth/start` → `startXAuth` stores PKCE verifier in `oauthSessions/{state}` and redirects to X.
+1. User opens site (optionally `?invite=CODE`). On mobile, Hosting Universal/App Links open the installed app WebView with the same URL when configured.
+2. **Sign in with X** → Hosting `/oauth/start` → `startXAuth` stores PKCE verifier (+ optional `invite`) in `oauthSessions/{state}` and redirects to X. The SPA also persists invite in session/local storage for retries.
 3. X redirects to `/oauth/callback` → `xOAuthCallback`:
    - Exchanges code for access + refresh tokens.
    - Allows join if already a member, handle/`xUserId` on `config/allowlist`, or (when `invitesEnabled`) a valid invite.
    - Upserts `members/{xUserId}` and `users/{xUserId}` (tokens).
    - Mints Firebase custom token using `ADMIN_SDK_CREDENTIALS` (local private-key signing; avoids Gen2 `signBlob` IAM issues).
-   - Redirects to `/?token=…`; client `signInWithCustomToken` then strips the query.
+   - Redirects to `/?token=…` (web) or `mytwitter://auth?token=…` (native); client `signInWithCustomToken` then strips the query. Failures redirect with `authError` and keep `invite` when the OAuth session had one.
    - Starts a **fire-and-forget first sync** for that user (in addition to the 10-minute schedule).
 4. Returning members re-run the same X OAuth path (refreshes API tokens + session).
 
@@ -148,7 +148,7 @@ Rules: [`firestore.rules`](../firestore.rules) — no world-readable posts.
 - Header: title, handle, last sync time (`Synced at hh:mm`), RSS link (secret URL from `getRssFeedUrl`), info, sign out on one line. Pull-to-refresh on the feed calls `syncMyTimeline`. Info dialog: status, app version, **text size** A−/A+ (persisted `localStorage`; Cmd+/Cmd− on mobile/native shells), admin-only usage (cumulative + today), invite button (only if `invitesEnabled`; client creates invites with `maxUses: 5`, `days: 14`).
 - **RSS:** after sign-in, header link points at `/feed.xml?token=…` (token stored Admin-only on `users/{uid}.rssToken`). Treat the URL as a credential; no public open feed.
 - Author profile card (hover on desktop, tap on touch): Follow / Unfollow (`getAuthorCard`, `setFollowing`) and **Favorite** toggle (Firestore `users/{uid}/favorites`). Feed cards show a star mark for posts from favorited accounts. Follow defaults to Following until the API returns. Requires a fresh X sign-in after `follows.write` / `like.write` scopes were added.
-- Deep links: `?tweet=` and `window.MyTwitterOpenTweet` open/highlight a post already in the feed, or fetch via `getTweet` into a dialog (lookups are not written into the following timeline). Native Android/iOS shells register for push **after** a favorites-gated soft prompt (not on cold start) and open tweets from notifications / deep links. The soft prompt is skipped when `MyTwitterNative.notificationsAuthorized` is true or the user already opted in (WebView `Notification.permission` does not mirror OS grants).
+- Deep links: `?tweet=` and `window.MyTwitterOpenTweet` open/highlight a post already in the feed, or fetch via `getTweet` into a dialog (lookups are not written into the following timeline). `t.co` links that expand to non-status URLs (articles, external sites) open externally via `resolvedUrl`. Native Android/iOS shells register for push **after** a favorites-gated soft prompt (not on cold start) and open tweets from notifications / deep links. The soft prompt is skipped when `MyTwitterNative.notificationsAuthorized` is true or the user already opted in (WebView `Notification.permission` does not mirror OS grants).
 - Returning-user cold start: SPA paints last posts from `localStorage` before Auth restore; native shells set a session hint (`mt_session` + `has-session`) so chrome/skeletons appear immediately.
 
 ## Secrets (Cloud Functions)

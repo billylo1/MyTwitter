@@ -41,6 +41,15 @@
                 <data android:scheme="mytwitter" android:host="auth" />
             </intent-filter>
 
+            <!-- Invite / site Universal App Links (verified) -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="mytwitter-feed.web.app" android:pathPrefix="/" />
+                <data android:scheme="https" android:host="mytwitter-feed.firebaseapp.com" android:pathPrefix="/" />
+            </intent-filter>
+
             <!-- Open status links from other apps (chooser; not verified App Links) -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

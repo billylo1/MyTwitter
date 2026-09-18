@@ -4,5 +4,10 @@
 <dict>
 	<key>aps-environment</key>
 	<string>production</string>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:mytwitter-feed.web.app</string>
+		<string>applinks:mytwitter-feed.firebaseapp.com</string>
+	</array>
 </dict>
 </plist>

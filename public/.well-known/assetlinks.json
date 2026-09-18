@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "org.evergreenlabs.mytwitter",
+      "sha256_cert_fingerprints": [
+        "E1:76:3D:4C:D6:6F:F0:AD:75:9A:E2:8B:5A:4C:6F:06:57:79:49:CC:D2:FB:2F:89:A0:D5:23:30:1A:00:ED:8C",
+        "C6:99:99:74:0D:C4:88:ED:7B:B6:29:97:8F:00:6E:EF:6D:C5:AC:9F:5C:48:FB:C7:9A:8B:FA:D1:4E:5D:4F:22"
+      ]
+    }
+  }
+]

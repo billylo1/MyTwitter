@@ -629,6 +629,8 @@ async function syncViaV2(client, userDoc, sinceId) {
       if (!newestId || BigInt(tweet.id) > BigInt(newestId)) {
         newestId = tweet.id;
       }
+      // X still returns retweets despite exclude=retweets; advance since_id past them but don't store.
+      if (isRetweetV2(tweet)) continue;
       const mapped = mapTweetV2(tweet, includes);
       await writePostMaybeNotify(
         userDoc.id,
@@ -834,7 +836,8 @@ async function followRedirects(startUrl, maxHops = 8) {
       method: "GET",
       redirect: "manual",
       headers: {
-        "User-Agent": "MyTwitterBot/1.0",
+        "User-Agent":
+          "Mozilla/5.0 (compatible; MyTwitter/1.0; +https://github.com/evergreenlabs)",
         Accept: "text/html",
       },
     });
@@ -1246,16 +1249,19 @@ exports.xOAuthCallback = onRequest(
   async (req, res) => {
     ensureSentry();
     let oauthClientHint = null;
+    let oauthInvite = null;
 
     const fail = (msg) => {
       if (oauthClientHint === "android" || oauthClientHint === "ios") {
         const u = new URL("mytwitter://auth");
         u.searchParams.set("authError", msg);
+        if (oauthInvite) u.searchParams.set("invite", oauthInvite);
         res.redirect(302, u.toString());
         return;
       }
       const u = new URL(getSiteUrl());
       u.searchParams.set("authError", msg);
+      if (oauthInvite) u.searchParams.set("invite", oauthInvite);
       res.redirect(302, u.toString());
     };
 
@@ -1280,6 +1286,7 @@ exports.xOAuthCallback = onRequest(
       }
       const session = sessionSnap.data();
       oauthClientHint = (session?.client || "").toString().toLowerCase() || null;
+      oauthInvite = (session?.invite || "").toString().trim() || null;
       await sessionRef.delete();
 
       if (
@@ -1853,18 +1860,20 @@ exports.resolveTweetUrl = onCall(
       if (host === "t.co") {
         candidate = await followRedirects(raw);
       }
-    } catch {
-      throw new HttpsError("invalid-argument", "Invalid url");
+    } catch (err) {
+      if (err instanceof HttpsError) throw err;
+      // Invalid URL vs expand failure
+      try {
+        new URL(raw);
+      } catch {
+        throw new HttpsError("invalid-argument", "Invalid url");
+      }
+      throw new HttpsError("unavailable", "Could not expand that link.");
     }
 
     const tweetId = extractStatusIdFromUrl(candidate);
-    if (!tweetId) {
-      throw new HttpsError(
-        "not-found",
-        "Could not find a tweet id in that link."
-      );
-    }
-    return { tweetId, resolvedUrl: candidate };
+    // Non-status destinations (articles, external sites, etc.) — client opens resolvedUrl.
+    return { tweetId: tweetId || null, resolvedUrl: candidate };
   })
 );
 

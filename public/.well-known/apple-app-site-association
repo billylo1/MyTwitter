@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "X5J5T5UT6J.org.evergreenlabs.mytwitter",
+        "paths": ["/", "/*"]
+      }
+    ]
+  }
+}

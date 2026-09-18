@@ -96,6 +96,7 @@ const APP_VERSION = "0.1.26";
 const SESSION_HINT_KEY = "mytwitter:hasSession";
 const LAST_UID_KEY = "mytwitter:lastUid";
 const FEED_CACHE_KEY = "mytwitter:feedCache:v1";
+const PENDING_INVITE_KEY = "mytwitter:pendingInvite";
 const FONT_SCALE_KEY = "mytwitter:fontScale";
 const FONT_SCALE_MIN = 0.85;
 const FONT_SCALE_MAX = 1.4;
@@ -1207,6 +1208,25 @@ async function flushPendingTweet() {
   await openTweetById(id);
 }
 
+/** Open a non-status URL outside the tweet dialog (new tab / Custom Tabs / Safari). */
+function openExternalUrl(url) {
+  const href = String(url || "").trim();
+  if (!href) return;
+  if (tweetDialogEl?.open) tweetDialogEl.close();
+  const opened = window.open(href, "_blank", "noopener,noreferrer");
+  if (opened) return;
+  // Native WebViews often block window.open; main-frame navigate so the shell
+  // can hand off to Custom Tabs / SFSafariViewController. Skip t.co there —
+  // native intercepts t.co and would re-enter MyTwitterOpenTweet.
+  try {
+    const host = new URL(href).hostname.replace(/^www\./i, "").toLowerCase();
+    if (host === "t.co" && window.MyTwitterNative) return;
+  } catch {
+    /* ignore */
+  }
+  window.location.assign(href);
+}
+
 /** Native shells and deep links call this with a tweet id or URL. */
 window.MyTwitterOpenTweet = function MyTwitterOpenTweet(tweetIdOrUrl) {
   const raw = String(tweetIdOrUrl || "").trim();
@@ -1231,11 +1251,31 @@ window.MyTwitterOpenTweet = function MyTwitterOpenTweet(tweetIdOrUrl) {
       const result = await resolveTweetUrl({ url: raw });
       if (gen !== tweetOpenGen) return;
       const tweetId = result.data?.tweetId;
-      if (tweetId) await openTweetById(tweetId, { gen });
-      else showTweetDialogError("Could not resolve that link.");
+      const resolvedUrl = result.data?.resolvedUrl;
+      if (tweetId) {
+        await openTweetById(tweetId, { gen });
+        return;
+      }
+      if (resolvedUrl) {
+        openExternalUrl(resolvedUrl);
+        statusEl.textContent = "";
+        return;
+      }
+      showTweetDialogError("Could not resolve that link.");
     } catch (err) {
       if (gen !== tweetOpenGen) return;
       console.error(err);
+      // Web: let the browser follow the short link. Native shells re-intercept
+      // t.co into this same path, so keep the error UI there.
+      try {
+        const host = new URL(raw).hostname.replace(/^www\./i, "").toLowerCase();
+        if (!(host === "t.co" && window.MyTwitterNative)) {
+          openExternalUrl(raw);
+          return;
+        }
+      } catch {
+        /* ignore */
+      }
       showTweetDialogError("Could not resolve that link.");
     }
   })();
@@ -1915,8 +1955,55 @@ function wirePullToRefresh() {
   window.addEventListener("touchcancel", onTouchEnd);
 }
 
+function readStoredInvite() {
+  try {
+    const fromSession = sessionStorage.getItem(PENDING_INVITE_KEY);
+    if (fromSession) return fromSession;
+  } catch {
+    /* private mode */
+  }
+  try {
+    return localStorage.getItem(PENDING_INVITE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function persistInvite(code) {
+  const cleaned = String(code || "").trim();
+  if (!cleaned) return;
+  try {
+    sessionStorage.setItem(PENDING_INVITE_KEY, cleaned);
+  } catch {
+    /* ignore */
+  }
+  try {
+    localStorage.setItem(PENDING_INVITE_KEY, cleaned);
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearPendingInvite() {
+  try {
+    sessionStorage.removeItem(PENDING_INVITE_KEY);
+  } catch {
+    /* ignore */
+  }
+  try {
+    localStorage.removeItem(PENDING_INVITE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 function inviteFromUrl() {
-  return new URLSearchParams(location.search).get("invite") || "";
+  const fromUrl = new URLSearchParams(location.search).get("invite") || "";
+  if (fromUrl) {
+    persistInvite(fromUrl);
+    return fromUrl;
+  }
+  return readStoredInvite();
 }
 
 function startAuthUrl() {
@@ -1960,9 +2047,17 @@ async function consumeAuthParams() {
   const invite = params.get("invite");
   const tweet = params.get("tweet");
 
+  if (invite) {
+    persistInvite(invite);
+  }
+
   if (authError) {
     showAuthError(authError);
     params.delete("authError");
+    const pending = invite || readStoredInvite();
+    if (pending && !params.get("invite")) {
+      params.set("invite", pending);
+    }
     const next = `${location.pathname}${params.toString() ? `?${params}` : ""}${location.hash}`;
     history.replaceState({}, "", next);
   }
@@ -1981,7 +2076,8 @@ async function consumeAuthParams() {
     history.replaceState({}, "", next);
   }
 
-  if (invite && !authError) {
+  const pendingInvite = invite || readStoredInvite();
+  if (pendingInvite && !authError) {
     // Server still rejects redemption when invitesEnabled is false.
     authMessageEl.textContent =
       "You have an invite. Sign in with X to join this private feed.";
@@ -2087,6 +2183,7 @@ async function refreshMembership(user) {
 async function enterApp(user) {
   bootMark("enterApp");
   setSessionHint(true, user.uid);
+  clearPendingInvite();
   hideBootSplash();
   authGateEl.classList.add("hidden");
   appShellEl.classList.remove("hidden");
@@ -2388,6 +2485,24 @@ async function boot() {
   wireUi();
   paintCachedFeed();
 
+  // Wait for persisted Auth + consume ?token= BEFORE the null-user gate runs.
+  // Otherwise onAuthStateChanged(null) clears session hints/cache while the
+  // OAuth custom-token handoff is still in flight (admin lockout symptom).
+  try {
+    await auth.authStateReady();
+    bootMark("auth-ready");
+  } catch (err) {
+    console.warn("[boot] authStateReady failed", err);
+  }
+
+  try {
+    await consumeAuthParams();
+    bootMark("auth-params");
+  } catch (err) {
+    console.error(err);
+    showAuthError("oauth_failed");
+  }
+
   onAuthStateChanged(auth, async (user) => {
     bootMark("auth", user ? "in" : "out");
     if (!user) {
@@ -2444,14 +2559,6 @@ async function boot() {
       }
     }
   });
-
-  try {
-    await consumeAuthParams();
-    bootMark("auth-params");
-  } catch (err) {
-    console.error(err);
-    showAuthError("oauth_failed");
-  }
 }
 
 boot();

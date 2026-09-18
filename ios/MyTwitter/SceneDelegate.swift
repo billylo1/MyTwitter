@@ -30,6 +30,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if let url = connectionOptions.urlContexts.first?.url {
             root.handleIncomingURL(url)
         }
+        for activity in connectionOptions.userActivities {
+            if activity.activityType == NSUserActivityTypeBrowsingWeb,
+               let url = activity.webpageURL
+            {
+                root.handleIncomingURL(url)
+                break
+            }
+        }
         if let response = connectionOptions.notificationResponse {
             PushService.shared.handleNotificationUserInfo(
                 response.notification.request.content.userInfo
@@ -86,6 +94,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         guard let url = URLContexts.first?.url,
+              let root = window?.rootViewController as? MainViewController
+        else { return }
+        root.handleIncomingURL(url)
+    }
+
+    func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+        guard userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+              let url = userActivity.webpageURL,
               let root = window?.rootViewController as? MainViewController
         else { return }
         root.handleIncomingURL(url)

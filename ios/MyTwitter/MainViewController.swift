@@ -137,7 +137,7 @@ final class MainViewController: UIViewController {
     }
 
     /// Bump when Hosting ships shell/JS fixes that must not stay stuck in WK HTTP cache.
-    private static let shellCacheEpoch = "0.1.18"
+    private static let shellCacheEpoch = "0.1.23"
 
     private func loadSite() {
         guard let url = URL(string: siteURL) else {
@@ -210,7 +210,22 @@ final class MainViewController: UIViewController {
 
     func handleIncomingURL(_ url: URL) {
         dismissOAuthSafariIfNeeded()
-        guard url.scheme?.lowercased() == "mytwitter" else {
+        let scheme = url.scheme?.lowercased() ?? ""
+        if scheme == "https" || scheme == "http" {
+            if isFirstPartyHost(url.host?.lowercased() ?? "") {
+                log.info("Universal Link → WebView \(url.absoluteString, privacy: .public)")
+                syncSessionCookie()
+                var request = URLRequest(url: url)
+                request.cachePolicy = .reloadIgnoringLocalCacheData
+                webView.load(request)
+                return
+            }
+            if TweetUrlParser.isXStatusOrTco(url) {
+                openTweetFromURL(url)
+            }
+            return
+        }
+        guard scheme == "mytwitter" else {
             if TweetUrlParser.isXStatusOrTco(url) {
                 openTweetFromURL(url)
             }
@@ -247,12 +262,15 @@ final class MainViewController: UIViewController {
         if let err = incoming.first(where: { $0.name == "authError" })?.value, !err.isEmpty {
             items.append(URLQueryItem(name: "authError", value: err))
         }
+        if let invite = incoming.first(where: { $0.name == "invite" })?.value, !invite.isEmpty {
+            items.append(URLQueryItem(name: "invite", value: invite))
+        }
         comps?.queryItems = items.isEmpty ? nil : items
         guard let target = comps?.url else { return }
         log.info("OAuth return → WebView")
         syncSessionCookie()
         var request = URLRequest(url: target)
-        request.cachePolicy = .returnCacheDataElseLoad
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         webView.load(request)
     }
 

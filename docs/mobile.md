@@ -130,7 +130,8 @@ xcodebuild -project MyTwitter.xcodeproj -scheme MyTwitter \
 | Concern | How |
 |--------|-----|
 | Feed / favorites | Same web SPA |
-| Sign in with X | `SFSafariViewController` → `/oauth/start?client=ios` → `mytwitter://auth?token=…` → WKWebView |
+| Sign in with X | `SFSafariViewController` → `/oauth/start?client=ios` (+ optional `invite`) → `mytwitter://auth?token=…` → WKWebView |
+| Invite join (mobile) | `https://SITE/?invite=CODE` opens the app via Universal Links (Associated Domains) when installed; SPA persists invite across OAuth retries; auth errors keep `invite` |
 | Status / t.co (in-app) | Navigation policy + `TweetUrlParser` / SPA `MyTwitterOpenTweet` |
 | Custom schemes | `mytwitter://auth`, `mytwitter://tweet`, `mytwitter://url` |
 | Push | FCM + APNs; tap opens tweet via `data.tweetId`. Same deferred soft-prompt flow as Android (favorites-gated; no cold-start OS dialog). Native reports `notificationsAuthorized` so the prompt is not repeated after OS grant |
@@ -140,6 +141,26 @@ xcodebuild -project MyTwitter.xcodeproj -scheme MyTwitter \
 | Export compliance | `ITSAppUsesNonExemptEncryption = false` in `ios/project.yml` → `Info.plist` (keep it in **project.yml** so `xcodegen generate` does not drop it) |
 | Mac (Designed for iPhone) | Opens tall at ~676pt width, then resizable (~507–1170pt wide). WKWebView pins to the view edges (not safe area) so no black gap appears under the Mac title bar |
 | Safe area | WKWebView pinned to `safeAreaLayoutGuide` on iPhone/iPad |
+
+### Invite deep links (iOS + Android)
+
+Invite URLs stay `https://<SITE_URL>/?invite=CODE`.
+
+1. Hosting serves `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json`.
+2. iOS: Associated Domains `applinks:mytwitter-feed.web.app` (+ firebaseapp.com) → `SceneDelegate` continues browsing-web activities into the WebView.
+3. Android: verified App Links intent-filter (`autoVerify`) for the same hosts → `MainActivity` loads the full invite URL.
+4. SPA stores the code in session/local storage; Functions echo `invite` on OAuth failure; native `mytwitter://auth` forwards `invite` with `token` / `authError`.
+
+**Verify after Hosting deploy + a new store/TestFlight/Play build** (deep links need the new binary):
+
+```bash
+curl -sI https://mytwitter-feed.web.app/.well-known/apple-app-site-association
+curl -s https://mytwitter-feed.web.app/.well-known/assetlinks.json
+# Apple CDN (can lag): https://app-site-association.cdn-apple.com/a/v1/mytwitter-feed.web.app
+# Android: adb shell pm get-app-links org.evergreenlabs.mytwitter
+```
+
+If the user installs from the store after opening the invite only in a browser, they must **tap the invite link again** so the OS can open the app with `?invite=` (no deferred install linking).
 
 Universal Links for `https://x.com/.../status/...` are not configured yet (follow-up).
 

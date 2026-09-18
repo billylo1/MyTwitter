@@ -92,7 +92,7 @@ const appVersionEl = document.getElementById("app-version");
 const ptrIndicatorEl = document.getElementById("ptr-indicator");
 
 /** Web SPA build label (bump when shipping Hosting). Native apps override via bridge. */
-const APP_VERSION = "0.1.26";
+const APP_VERSION = "0.1.27";
 const SESSION_HINT_KEY = "mytwitter:hasSession";
 const LAST_UID_KEY = "mytwitter:lastUid";
 const FEED_CACHE_KEY = "mytwitter:feedCache:v1";
@@ -2022,7 +2022,13 @@ function showAuthGate(message) {
   hideBootSplash();
   appShellEl.classList.add("hidden");
   authGateEl.classList.remove("hidden");
-  if (message) authMessageEl.textContent = message;
+  const invite = inviteFromUrl();
+  if (invite) {
+    authMessageEl.textContent =
+      "You have an invite. Sign in with X to join this private feed.";
+  } else if (message) {
+    authMessageEl.textContent = message;
+  }
   signInBtn.href = startAuthUrl();
 }
 

@@ -2,7 +2,7 @@ name: MyTwitter
 options:
   bundleIdPrefix: org.evergreenlabs
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "18.0"
   createIntermediateGroups: true
   groupSortPosition: top
 settings:
@@ -37,8 +37,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.evergreenlabs.mytwitter
         PRODUCT_NAME: MyTwitter
-        MARKETING_VERSION: "0.1.5"
-        CURRENT_PROJECT_VERSION: "8"
+        MARKETING_VERSION: "0.2.0"
+        CURRENT_PROJECT_VERSION: "9"
         INFOPLIST_FILE: MyTwitter/Info.plist
         CODE_SIGN_ENTITLEMENTS: MyTwitter/MyTwitter.entitlements
         GENERATE_INFOPLIST_FILE: NO
@@ -57,6 +57,12 @@ targets:
     dependencies:
       - package: firebase-ios-sdk
         product: FirebaseCore
+      - package: firebase-ios-sdk
+        product: FirebaseAuth
+      - package: firebase-ios-sdk
+        product: FirebaseFirestore
+      - package: firebase-ios-sdk
+        product: FirebaseFunctions
       - package: firebase-ios-sdk
         product: FirebaseMessaging
       # Sentry-Dynamic embeds a dSYM in the archive; static `Sentry` triggers
@@ -83,10 +89,6 @@ targets:
               - mytwitter
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
-          UISceneConfigurations:
-            UIWindowSceneSessionRoleApplication:
-              - UISceneConfigurationName: Default Configuration
-                UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).SceneDelegate
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
@@ -96,7 +98,3 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        # Required for Service Workers + message handlers in WKWebView (iOS 16.4+).
-        WKAppBoundDomains:
-          - mytwitter-feed.web.app
-          - mytwitter-feed.firebaseapp.com

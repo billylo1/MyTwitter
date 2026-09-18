@@ -89,13 +89,13 @@ Prebuilt assets live in `android/play-store/`:
 
 # iOS native client
 
-Thin `WKWebView` shell (UIKit) that loads the same Hosting SPA. Bundle ID: `org.evergreenlabs.mytwitter`.
+Fully native **SwiftUI** app (iOS 18+) that talks to Firebase Auth, Firestore, and Cloud Functions directly — no WebView. Bundle ID: `org.evergreenlabs.mytwitter`.
 
-**Offline cold start:** Same as Android — one prior online visit registers the Hosting service worker (iOS 16.4+) and fills Firestore’s persistent cache. The iOS shell enables **App-Bound Domains** (`WKAppBoundDomains` + `limitsNavigationsToAppBoundDomains`) so Service Workers work in WKWebView; keep your Hosting hosts listed there when forking.
+**Offline:** Firestore’s persistent cache keeps the last feed available after one online session. Media from X CDN may still fail offline.
 
 ## Requirements
 
-- Xcode 16+ / iOS 16+
+- Xcode 16+ / **iOS 18+**
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`) to regenerate the project from `ios/project.yml` if needed
 
 ## Configure
@@ -112,9 +112,9 @@ SITE_URL = https:/$()/YOUR_PROJECT_ID.web.app
 # SENTRY_DSN = https:/$()/YOUR_PUBLIC_KEY@oXXXX.ingest.us.sentry.io/PROJECT_ID
 ```
 
-Leave `SENTRY_DSN` blank to disable Sentry — the app never starts the SDK without a real `https://` DSN (placeholders and unresolved `$(…)` values are ignored). The app links SPM product `Sentry-Dynamic` (not static `Sentry`) so App Store archives include `Sentry.framework` dSYMs when you do enable it. Fastlane dSYM upload is also optional: it runs only when `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and `SENTRY_PROJECT` are all set.
+`SITE_URL` is the OAuth origin (`/oauth/start`, `/oauth/callback`). Leave `SENTRY_DSN` blank to disable Sentry. The app links SPM products `FirebaseCore`, `FirebaseAuth`, `FirebaseFirestore`, `FirebaseFunctions`, `FirebaseMessaging`, and `Sentry-Dynamic`.
 
-Register an iOS app in Firebase with the same bundle ID and keep [`ios/MyTwitter/GoogleService-Info.plist`](../ios/MyTwitter/GoogleService-Info.plist) in sync. Upload an Apple APNs **Authentication Key** (`.p8` from [Certificates, Identifiers & Keys](https://developer.apple.com/account/resources/authkeys/list), with Apple Push Notifications enabled) in Firebase Console → Project settings → Cloud Messaging → Apple app configuration — both **development** and **production** slots (same `.p8` / Key ID / Team ID is fine). Also enable **Push Notifications** on the App ID `org.evergreenlabs.mytwitter` and run with code signing so `aps-environment` is embedded.
+Register an iOS app in Firebase with the same bundle ID and keep [`ios/MyTwitter/GoogleService-Info.plist`](../ios/MyTwitter/GoogleService-Info.plist) in sync. Upload an Apple APNs **Authentication Key** in Firebase Console → Cloud Messaging → Apple app configuration (development + production). Enable **Push Notifications** on the App ID and run with code signing so `aps-environment` is embedded.
 
 Open [`ios/MyTwitter.xcodeproj`](../ios/MyTwitter.xcodeproj), select your team, then Run.
 
@@ -122,34 +122,31 @@ Open [`ios/MyTwitter.xcodeproj`](../ios/MyTwitter.xcodeproj), select your team, 
 cd ios
 xcodegen generate   # only if project.yml changed
 xcodebuild -project MyTwitter.xcodeproj -scheme MyTwitter \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+  -destination 'platform=iOS Simulator,name=iPhone 17' build
 ```
 
 ## Behavior
 
 | Concern | How |
 |--------|-----|
-| Feed / favorites | Same web SPA |
-| Sign in with X | `ASWebAuthenticationSession` → `/oauth/start?client=ios` (+ optional `invite`) → `mytwitter://auth?handoff=…` → WebView loads `/?handoff=…` → SPA `exchangeAuthHandoff` → `signInWithCustomToken` |
-| Invite join (mobile) | `https://SITE/?invite=CODE` opens the app via Universal Links (Associated Domains) when installed; SPA persists invite across OAuth retries; auth errors keep `invite` |
-| Status / t.co (in-app) | Navigation policy + `TweetUrlParser` / SPA `MyTwitterOpenTweet` |
+| Feed / favorites | Native Firestore listeners on `users/{uid}/posts`, `likes`, `favorites`, `config/public` |
+| Sign in with X | `ASWebAuthenticationSession` → `/oauth/start?client=ios` (+ optional `invite`) → `mytwitter://auth?handoff=…` → `exchangeAuthHandoff` → `Auth.signIn(withCustomToken:)` |
+| Invite join | `https://SITE/?invite=CODE` via Universal Links; invite stored for the next sign-in |
+| Status / t.co | `TweetUrlParser` + `resolveTweetUrl` / `getTweet` callables; opens detail sheet or Safari |
 | Custom schemes | `mytwitter://auth`, `mytwitter://tweet`, `mytwitter://url` |
-| Push | FCM + APNs; tap opens tweet via `data.tweetId`. Same deferred soft-prompt flow as Android (favorites-gated; no cold-start OS dialog). Native reports `notificationsAuthorized` so the prompt is not repeated after OS grant |
-| Pull to refresh | Same SPA gesture → `syncMyTimeline` |
-| Native bridge | `window.MyTwitterNative` (`platform: ios`, `requestPushRegistration`, `setHasSession`, version fields) |
-| Returning session | `UserDefaults` + `mt_session` cookie + at-document-start `has-session` class so chrome/skeletons (and cached posts from the SPA) paint before Auth restore |
-| Export compliance | `ITSAppUsesNonExemptEncryption = false` in `ios/project.yml` → `Info.plist` (keep it in **project.yml** so `xcodegen generate` does not drop it) |
-| Mac (Designed for iPhone) | Opens tall at ~676pt width, then resizable (~507–1170pt wide). WKWebView pins to the view edges (not safe area) so no black gap appears under the Mac title bar |
-| Safe area | WKWebView pinned to `safeAreaLayoutGuide` on iPhone/iPad |
+| Push | FCM + APNs; tap opens tweet via `data.tweetId`. Favorites-gated soft prompt (no cold-start OS dialog); then `registerDevice` |
+| Pull to refresh | Native `.refreshable` → `syncMyTimeline` |
+| Profile / admin | Info sheet: RSS (`getRssFeedUrl`), sign out; admin usage + `createInvite` when `invitesEnabled` |
+| Export compliance | `ITSAppUsesNonExemptEncryption = false` in `ios/project.yml` → `Info.plist` |
 
 ### Invite deep links (iOS + Android)
 
 Invite URLs stay `https://<SITE_URL>/?invite=CODE`.
 
 1. Hosting serves `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json`.
-2. iOS: Associated Domains `applinks:mytwitter-feed.web.app` (+ firebaseapp.com) → `SceneDelegate` continues browsing-web activities into the WebView.
-3. Android: verified App Links intent-filter (`autoVerify`) for the same hosts → `MainActivity` loads the full invite URL.
-4. SPA stores the code in session/local storage; Functions echo `invite` on OAuth failure; native `mytwitter://auth` forwards `invite` with `token` / `authError`.
+2. iOS: Associated Domains → SwiftUI `.onContinueUserActivity` stores the invite / opens tweets.
+3. Android: verified App Links → `MainActivity` loads the invite URL into the WebView SPA.
+4. Functions echo `invite` on OAuth failure; native `mytwitter://auth` carries `handoff` / `authError` / `invite`.
 
 **Verify after Hosting deploy + a new store/TestFlight/Play build** (deep links need the new binary):
 
@@ -160,28 +157,4 @@ curl -s https://mytwitter-feed.web.app/.well-known/assetlinks.json
 # Android: adb shell pm get-app-links org.evergreenlabs.mytwitter
 ```
 
-If the user installs from the store after opening the invite only in a browser, they must **tap the invite link again** so the OS can open the app with `?invite=` (no deferred install linking).
-
-Universal Links for `https://x.com/.../status/...` are not configured yet (follow-up).
-
-## App Store / TestFlight / Play beta (Fastlane)
-
-From the **repo root**, use Homebrew Fastlane (`/opt/homebrew/bin/fastlane`). Commit and push version bumps before / after store uploads as usual.
-
-```bash
-# Android — Play open testing (beta track). Loads ~/.sidekick-secrets/mytwitter-android-env.sh when present.
-fastlane android beta
-# Optional: VERSION_ALREADY_BUMPED=1 fastlane android beta   # skip versionCode bump
-# Optional: fastlane android beta track:internal
-
-# iOS — TestFlight (bumps CURRENT_PROJECT_VERSION in ios/project.yml + xcodegen)
-fastlane ios beta
-# Optional: fastlane ios beta whats_new:"Offline cold start fixes"
-
-# Both (Android first, then iOS)
-fastlane beta_both
-```
-
-Release builds use `MyTwitterRelease.entitlements` (`aps-environment: production`). Debug keeps `development`. Ensure the APNs `.p8` is uploaded in Firebase for **both** development and production slots.
-
-ASC API key defaults to `~/Xcode/keys/Evergreen_AppConnectAPI_TH4226994B.p8` (override with `APP_STORE_CONNECT_KEY_PATH` / `APP_STORE_CONNECT_KEY_CONTENT`).
+Simulator note: Universal Links often open Safari on the simulator; use a physical device or `xcrun simctl openurl booted 'mytwitter://…'` / a DEBUG pending-invite hook for local invite testing.

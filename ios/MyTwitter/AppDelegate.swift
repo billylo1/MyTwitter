@@ -4,8 +4,7 @@ import FirebaseMessaging
 import Sentry
 import OSLog
 
-@main
-class AppDelegate: UIResponder, UIApplicationDelegate {
+final class AppDelegate: NSObject, UIApplicationDelegate {
     private let log = Logger(subsystem: "org.evergreenlabs.mytwitter", category: "App")
 
     func application(
@@ -15,8 +14,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         configureSentry()
         FirebaseApp.configure()
         PushService.shared.configure()
-        // OS notification permission is requested from the SPA soft prompt
-        // after the user has favorited authors (see public/app.js).
 
         if let remote = launchOptions?[.remoteNotification] as? [AnyHashable: Any] {
             PushService.shared.handleNotificationUserInfo(remote)

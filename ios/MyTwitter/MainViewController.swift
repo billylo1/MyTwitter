@@ -167,6 +167,19 @@ final class MainViewController: UIViewController {
                 return
             }
         }
+        // Automation/testing: `defaults write … pendingInvite <code>` then launch.
+        if let invite = defaults.string(forKey: "pendingInvite"), !invite.isEmpty {
+            defaults.removeObject(forKey: "pendingInvite")
+            var comps = URLComponents(string: siteURL)
+            comps?.queryItems = [URLQueryItem(name: "invite", value: invite)]
+            if let target = comps?.url {
+                log.info("DEBUG pendingInvite → WebView")
+                var request = URLRequest(url: target)
+                request.cachePolicy = .reloadIgnoringLocalCacheData
+                finishLoad(request: request, needsFreshShell: true, epochKey: key)
+                return
+            }
+        }
         #endif
 
         var request = URLRequest(url: url)

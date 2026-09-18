@@ -68,15 +68,24 @@
     "rewrites": [
       {
         "source": "/oauth/start",
-        "function": "startXAuth"
+        "function": {
+          "functionId": "startXAuth",
+          "region": "us-central1"
+        }
       },
       {
         "source": "/oauth/callback",
-        "function": "xOAuthCallback"
+        "function": {
+          "functionId": "xOAuthCallback",
+          "region": "us-central1"
+        }
       },
       {
         "source": "/feed.xml",
-        "function": "feedRss"
+        "function": {
+          "functionId": "feedRss",
+          "region": "us-central1"
+        }
       }
     ]
   },

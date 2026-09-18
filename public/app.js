@@ -92,10 +92,14 @@ const appVersionEl = document.getElementById("app-version");
 const ptrIndicatorEl = document.getElementById("ptr-indicator");
 
 /** Web SPA build label (bump when shipping Hosting). Native apps override via bridge. */
-const APP_VERSION = "0.1.18";
+const APP_VERSION = "0.1.20";
 const SESSION_HINT_KEY = "mytwitter:hasSession";
 const LAST_UID_KEY = "mytwitter:lastUid";
 const FEED_CACHE_KEY = "mytwitter:feedCache:v1";
+const FONT_SCALE_KEY = "mytwitter:fontScale";
+const FONT_SCALE_MIN = 0.85;
+const FONT_SCALE_MAX = 1.4;
+const FONT_SCALE_STEP = 0.1;
 const FIRST_PAINT_CARDS = 8;
 const FEED_CHUNK = 12;
 
@@ -270,6 +274,93 @@ function formatAbsolute(date) {
   });
 }
 
+function clampFontScale(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 1;
+  const stepped = Math.round(n / FONT_SCALE_STEP) * FONT_SCALE_STEP;
+  return Math.min(
+    FONT_SCALE_MAX,
+    Math.max(FONT_SCALE_MIN, Math.round(stepped * 100) / 100)
+  );
+}
+
+function readStoredFontScale() {
+  try {
+    const raw = localStorage.getItem(FONT_SCALE_KEY);
+    if (raw == null) return 1;
+    return clampFontScale(raw);
+  } catch {
+    return 1;
+  }
+}
+
+function currentFontScale() {
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue("--font-scale")
+    .trim();
+  return clampFontScale(raw || readStoredFontScale());
+}
+
+function applyFontScale(scale, { persist = true } = {}) {
+  const next = clampFontScale(scale);
+  document.documentElement.style.setProperty("--font-scale", String(next));
+  if (persist) {
+    try {
+      localStorage.setItem(FONT_SCALE_KEY, String(next));
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }
+  syncFontSizeControls(next);
+  return next;
+}
+
+function syncFontSizeControls(scale = currentFontScale()) {
+  const valueEl = document.getElementById("font-size-value");
+  const downBtn = document.getElementById("font-size-down");
+  const upBtn = document.getElementById("font-size-up");
+  if (valueEl) valueEl.textContent = `${Math.round(scale * 100)}%`;
+  if (downBtn) downBtn.disabled = scale <= FONT_SCALE_MIN + 1e-9;
+  if (upBtn) upBtn.disabled = scale >= FONT_SCALE_MAX - 1e-9;
+}
+
+function bumpFontScale(delta) {
+  return applyFontScale(currentFontScale() + delta);
+}
+
+/** Hardware-keyboard shortcuts only on mobile / native shells (desktop uses browser zoom). */
+function isMobileFontShortcutContext() {
+  if (window.MyTwitterNative) return true;
+  if (navigator.maxTouchPoints > 0 && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+    return true;
+  }
+  return Boolean(window.matchMedia?.("(pointer: coarse)").matches);
+}
+
+function wireFontSizeControls() {
+  applyFontScale(readStoredFontScale(), { persist: false });
+
+  document.getElementById("font-size-down")?.addEventListener("click", () => {
+    bumpFontScale(-FONT_SCALE_STEP);
+  });
+  document.getElementById("font-size-up")?.addEventListener("click", () => {
+    bumpFontScale(FONT_SCALE_STEP);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (!isMobileFontShortcutContext()) return;
+    if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+    const key = event.key;
+    const code = event.code;
+    const zoomIn =
+      key === "+" || key === "=" || code === "Equal" || code === "NumpadAdd";
+    const zoomOut = key === "-" || key === "_" || code === "Minus" || code === "NumpadSubtract";
+    if (!zoomIn && !zoomOut) return;
+    event.preventDefault();
+    bumpFontScale(zoomIn ? FONT_SCALE_STEP : -FONT_SCALE_STEP);
+  });
+}
+
 function formatRelative(date) {
   if (!date) return "";
   const ms = date.getTime() - Date.now();
@@ -357,6 +448,14 @@ function stripPreviewUrlsFromText(text, preview) {
     .trim();
 }
 
+function formatSyncedAt(date) {
+  const time = date.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `Synced at ${time}`;
+}
+
 function renderRefreshed(ts) {
   if (!refreshedEl) return;
   const date = ts?.toDate?.() || (ts instanceof Date ? ts : null);
@@ -366,7 +465,7 @@ function renderRefreshed(ts) {
     return;
   }
   refreshedEl.classList.remove("hidden");
-  refreshedEl.textContent = formatRelative(date);
+  refreshedEl.textContent = formatSyncedAt(date);
   refreshedEl.title = formatAbsolute(date);
 }
 
@@ -852,6 +951,12 @@ function unwatchCardVideos(el) {
   }
 }
 
+function setButtonBusy(btn, busy) {
+  if (!btn) return;
+  btn.classList.toggle("is-busy", busy);
+  btn.setAttribute("aria-busy", busy ? "true" : "false");
+}
+
 function setLikeButtonState(btn, liked) {
   btn.classList.toggle("is-liked", liked);
   btn.setAttribute("aria-pressed", liked ? "true" : "false");
@@ -952,6 +1057,7 @@ async function toggleFavorite(author) {
   const next = !favoritedIds.has(authorId);
   const ref = doc(db, "users", uid, "favorites", authorId);
   if (authorCardFavorite) {
+    setButtonBusy(authorCardFavorite, true);
     authorCardFavorite.disabled = true;
     authorCardFavorite.classList.toggle("is-favorited", next);
     authorCardFavorite.setAttribute("aria-pressed", next ? "true" : "false");
@@ -993,9 +1099,14 @@ async function toggleFavorite(author) {
       renderAuthorCard({ ...authorCardState, error: message });
     }
   } finally {
-    if (authorCardFavorite && authorCardState) {
-      authorCardFavorite.disabled =
-        authorCardState.isSelf || !authorCardState.id;
+    if (authorCardFavorite) {
+      setButtonBusy(authorCardFavorite, false);
+      if (authorCardState) {
+        authorCardFavorite.disabled =
+          authorCardState.isSelf || !authorCardState.id;
+      } else {
+        authorCardFavorite.disabled = false;
+      }
     }
   }
 }
@@ -1333,6 +1444,7 @@ async function toggleLike(card, btn) {
   if (!tweetId || btn.disabled) return;
   const nextLiked = !btn.classList.contains("is-liked");
   setLikeButtonState(btn, nextLiked);
+  setButtonBusy(btn, true);
   btn.disabled = true;
   try {
     const setLiked = await callable("setLiked");
@@ -1349,6 +1461,7 @@ async function toggleLike(card, btn) {
     btn.title = message;
     statusEl.textContent = message;
   } finally {
+    setButtonBusy(btn, false);
     btn.disabled = false;
   }
 }
@@ -1490,10 +1603,16 @@ function subscribeFeed(uid, { onFirstPaint } = {}) {
 
   function restoreFeedScrollAnchor(anchor) {
     if (!anchor) return;
+    // Already at the top — stay there so newly prepended posts are visible.
+    // (Card pinning would otherwise push the old first card back into view.)
+    if ((anchor.scrollTop || 0) <= 1) {
+      writeScrollTop(0);
+      return;
+    }
     const root = scrollRoot();
     // 1) Height-delta first — this is what WKWebView needs when cards prepend.
     const heightDelta = root.scrollHeight - (anchor.height || 0);
-    if (Math.abs(heightDelta) > 0.5 && (anchor.scrollTop || 0) > 0) {
+    if (Math.abs(heightDelta) > 0.5) {
       writeScrollTop(anchor.scrollTop + heightDelta);
     }
     // 2) Pin the reading card's viewport offset if it still exists.
@@ -2051,6 +2170,7 @@ function wireScrollTopButton() {
 function wireUi() {
   renderAppVersion();
   window.addEventListener("mytwitter:nativeReady", () => renderAppVersion());
+  wireFontSizeControls();
   wirePullToRefresh();
   wirePushPromptDialog();
   wireScrollTopButton();
@@ -2061,6 +2181,7 @@ function wireUi() {
   if (dialog && openBtn && closeBtn) {
     openBtn.addEventListener("click", () => {
       renderAppVersion();
+      syncFontSizeControls();
       dialog.showModal();
     });
     closeBtn.addEventListener("click", () => dialog.close());
@@ -2100,11 +2221,13 @@ function wireUi() {
       }
     });
     authorCardFollow.addEventListener("mouseenter", () => {
+      if (authorCardFollow.classList.contains("is-busy")) return;
       if (authorCardFollow.classList.contains("is-following")) {
         authorCardFollow.textContent = "Unfollow";
       }
     });
     authorCardFollow.addEventListener("mouseleave", () => {
+      if (authorCardFollow.classList.contains("is-busy")) return;
       if (authorCardFollow.classList.contains("is-following")) {
         authorCardFollow.textContent = "Following";
       }
@@ -2113,8 +2236,9 @@ function wireUi() {
       event.preventDefault();
       event.stopPropagation();
       const current = authorCardState;
-      if (!current?.id || current.isSelf) return;
+      if (!current?.id || current.isSelf || authorCardFollow.disabled) return;
       const nextFollow = !current.following;
+      setButtonBusy(authorCardFollow, true);
       authorCardFollow.disabled = true;
       try {
         const setFollowing = await callable("setFollowing");
@@ -2131,6 +2255,8 @@ function wireUi() {
             ? err.message
             : "Could not update follow.";
         renderAuthorCard({ ...current, error: message });
+      } finally {
+        setButtonBusy(authorCardFollow, false);
       }
     });
   }

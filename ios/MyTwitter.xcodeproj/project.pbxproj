@@ -33,7 +33,7 @@
 		8EBBD1FADD1AB9D423146BDF /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		B4AED8656B83290FCD1D7147 /* MyTwitterRelease.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MyTwitterRelease.entitlements; sourceTree = "<group>"; };
 		F67438AF4F9BCB803DBB2CCD /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
-		"TEMP_6AC9FAB8-7E8D-46C7-833A-6DB976044E5C" /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
+		"TEMP_97F29623-39E7-4019-B62D-E9786314F171" /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -84,10 +84,10 @@
 			path = MyTwitter;
 			sourceTree = "<group>";
 		};
-		"TEMP_76B6A52D-AE3D-43C2-BC3E-5798CAEE2A08" /* ios */ = {
+		"TEMP_3C49D926-E451-4AC3-9AF6-6C09B318C470" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_6AC9FAB8-7E8D-46C7-833A-6DB976044E5C" /* Config.xcconfig */,
+				"TEMP_97F29623-39E7-4019-B62D-E9786314F171" /* Config.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -186,7 +186,7 @@
 /* Begin XCBuildConfiguration section */
 		6534C602ADD94C0AAEE61226 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_6AC9FAB8-7E8D-46C7-833A-6DB976044E5C" /* Config.xcconfig */;
+			baseConfigurationReference = "TEMP_97F29623-39E7-4019-B62D-E9786314F171" /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -252,7 +252,7 @@
 		};
 		6C48753CB492E1C163C59221 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_6AC9FAB8-7E8D-46C7-833A-6DB976044E5C" /* Config.xcconfig */;
+			baseConfigurationReference = "TEMP_97F29623-39E7-4019-B62D-E9786314F171" /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -317,7 +317,7 @@
 				CODE_SIGN_ENTITLEMENTS = MyTwitter/MyTwitter.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = X5J5T5UT6J;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MyTwitter/Info.plist;
@@ -343,7 +343,7 @@
 				CODE_SIGN_ENTITLEMENTS = MyTwitter/MyTwitterRelease.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = X5J5T5UT6J;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MyTwitter/Info.plist;

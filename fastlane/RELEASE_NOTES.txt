@@ -1,3 +1,7 @@
+Adjust text size from the info dialog; preference is saved on this device.
+On mobile with a keyboard, Cmd+ and Cmd- change text size.
+Header shows the last sync clock time instead of “just now.”
+Like, follow, and favorite buttons show a clear busy state while requests run.
 Scroll back to the top of the feed with a floating button.
 Push alerts no longer leave a number badge on the app icon.
 Home timeline skips retweets so you see original posts first.

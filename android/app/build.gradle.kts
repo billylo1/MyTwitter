@@ -51,7 +51,7 @@ android {
         applicationId = "org.evergreenlabs.mytwitter"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
+        versionCode = 7
         versionName = "0.1.5"
         buildConfigField("String", "SITE_URL", "\"$siteUrl\"")
         buildConfigField("String", "SENTRY_DSN", "\"$sentryDsn\"")

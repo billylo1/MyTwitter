@@ -6,6 +6,7 @@ import OSLog
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
     private let log = Logger(subsystem: "org.evergreenlabs.mytwitter", category: "App")
+    private static var didApplyMacMinWidth = false
 
     func application(
         _ application: UIApplication,
@@ -18,7 +19,30 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         if let remote = launchOptions?[.remoteNotification] as? [AnyHashable: Any] {
             PushService.shared.handleNotificationUserInfo(remote)
         }
+
+        for case let scene as UIWindowScene in application.connectedScenes {
+            Self.applyMacMinimumWindowWidth(scene)
+        }
+        NotificationCenter.default.addObserver(
+            forName: UIScene.willConnectNotification,
+            object: nil,
+            queue: .main
+        ) { notification in
+            Self.applyMacMinimumWindowWidth(notification.object as? UIWindowScene)
+        }
         return true
+    }
+
+    /// iPad-on-Mac windows inherit a fairly large system minimum width; shrink it.
+    private static func applyMacMinimumWindowWidth(_ scene: UIWindowScene?) {
+        guard !didApplyMacMinWidth,
+              ProcessInfo.processInfo.isiOSAppOnMac,
+              let restrictions = scene?.sizeRestrictions
+        else { return }
+        didApplyMacMinWidth = true
+        var minimum = restrictions.minimumSize
+        minimum.width *= 0.7
+        restrictions.minimumSize = minimum
     }
 
     func application(

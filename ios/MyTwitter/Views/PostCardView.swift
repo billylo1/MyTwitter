@@ -5,8 +5,6 @@ struct PostCardView: View {
     let isLiked: Bool
     let isFavorited: Bool
     var isHighlighted: Bool = false
-    var showHitLink: Bool = true
-    let onOpen: () -> Void
     let onAuthor: () -> Void
     let onLike: () -> Void
     let onLink: (URL) -> Void
@@ -20,11 +18,11 @@ struct PostCardView: View {
             if post.showAsRepost {
                 Label {
                     Text("@\(post.repostedByHandle ?? "") reposted")
-                        .font(.caption)
+                        .mtFont(.caption)
                         .foregroundStyle(.secondary)
                 } icon: {
                     Image(systemName: "arrow.2.squarepath")
-                        .font(.caption2)
+                        .mtFont(.caption2)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -36,10 +34,10 @@ struct PostCardView: View {
                         Button(action: onAuthor) {
                             HStack(alignment: .firstTextBaseline, spacing: 6) {
                                 Text(post.displayName)
-                                    .font(.subheadline.weight(.semibold))
+                                    .mtFont(.subheadline, weight: .semibold)
                                     .foregroundStyle(.primary)
                                 Text("@\(post.displayHandle)")
-                                    .font(.subheadline)
+                                    .mtFont(.subheadline)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
@@ -47,18 +45,18 @@ struct PostCardView: View {
                         .buttonStyle(.plain)
                         Spacer(minLength: 4)
                         Text(TextHelpers.relativeTime(post.createdAt))
-                            .font(.caption)
+                            .mtFont(.caption)
                             .foregroundStyle(.secondary)
                         if isFavorited {
                             Image(systemName: "star.fill")
-                                .font(.caption2)
+                                .mtFont(.caption2)
                                 .foregroundStyle(.yellow)
                         }
                     }
 
                     if !bodyText.isEmpty {
                         Text(TextHelpers.attributedBody(bodyText))
-                            .font(.body)
+                            .mtFont(.body)
                             .textSelection(.enabled)
                             .environment(\.openURL, OpenURLAction { url in
                                 onLink(url)
@@ -118,10 +116,6 @@ struct PostCardView: View {
             RoundedRectangle(cornerRadius: 14)
                 .fill(isHighlighted ? Color.accentColor.opacity(0.12) : Color(.secondarySystemBackground))
         )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if showHitLink { onOpen() }
-        }
     }
 
     private var avatarButton: some View {

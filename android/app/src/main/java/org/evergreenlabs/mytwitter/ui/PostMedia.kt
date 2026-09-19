@@ -1,30 +1,49 @@
 package org.evergreenlabs.mytwitter.ui
 
 import android.content.Context
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
@@ -32,6 +51,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.media3.common.MediaItem as ExoMediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -40,6 +61,9 @@ import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
 import coil3.compose.SubcomposeAsyncImage
 import org.evergreenlabs.mytwitter.data.MediaItem
+
+private val MultiGap = 8.dp
+private const val SingleAspectRatio = 4f / 3f
 
 private object SharedExoPlayerHolder {
     private var player: ExoPlayer? = null
@@ -78,37 +102,112 @@ fun PostMedia(
     val gridItems = remember(items) { items.take(4) }
     if (gridItems.isEmpty()) return
 
+    var fullscreenItem by remember { mutableStateOf<MediaItem?>(null) }
+
     if (gridItems.size == 1) {
         val item = gridItems.first()
         MediaCell(
             item = item,
-            single = true,
+            onOpen = {
+                SharedExoPlayerHolder.pause()
+                fullscreenItem = item
+            },
             modifier = modifier
                 .fillMaxWidth()
-                .heightIn(max = 320.dp)
+                .aspectRatio(SingleAspectRatio)
                 .clip(RoundedCornerShape(12.dp)),
         )
     } else {
-        val rows = (gridItems.size + 1) / 2
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            modifier = modifier
-                .fillMaxWidth()
-                .height((rows * 160).dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            userScrollEnabled = false,
+        // Web: .media.media-multi → 2-column grid, square cells, object-fit cover
+        val rows = remember(gridItems) { gridItems.chunked(2) }
+        Column(
+            modifier = modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(MultiGap),
         ) {
-            itemsIndexed(gridItems, key = { index, item ->
-                "${index}_${item.displayImageUrl}_${item.playableVideoUrl}"
-            }) { _, item ->
-                MediaCell(
-                    item = item,
-                    single = false,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                        .clip(RoundedCornerShape(8.dp)),
+            rows.forEach { row ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(MultiGap),
+                ) {
+                    row.forEach { item ->
+                        MediaCell(
+                            item = item,
+                            onOpen = {
+                                SharedExoPlayerHolder.pause()
+                                fullscreenItem = item
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .aspectRatio(1f)
+                                .clip(RoundedCornerShape(12.dp)),
+                        )
+                    }
+                    if (row.size == 1) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+
+    fullscreenItem?.let { item ->
+        MediaFullscreenDialog(
+            item = item,
+            onDismiss = { fullscreenItem = null },
+        )
+    }
+}
+
+@Composable
+private fun MediaFullscreenDialog(
+    item: MediaItem,
+    onDismiss: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+        ) {
+            ZoomableBox(modifier = Modifier.fillMaxSize()) {
+                val videoUrl = item.playableVideoUrl
+                if (item.isVideo && !videoUrl.isNullOrBlank()) {
+                    FullscreenVideo(
+                        videoUrl = videoUrl,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else if (!item.displayImageUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = item.displayImageUrl,
+                        contentDescription = item.alt,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .align(Alignment.Center),
+                    )
+                }
+            }
+
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(8.dp)
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.2f)),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "Close",
+                    tint = Color.White,
                 )
             }
         }
@@ -116,57 +215,144 @@ fun PostMedia(
 }
 
 @Composable
+private fun ZoomableBox(
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        val next = (scale * zoomChange).coerceIn(1f, 5f)
+        scale = next
+        if (next > 1.01f) {
+            offset += panChange
+        } else {
+            offset = Offset.Zero
+        }
+    }
+
+    BoxWithConstraints(modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onDoubleTap = {
+                            if (scale > 1.05f) {
+                                scale = 1f
+                                offset = Offset.Zero
+                            } else {
+                                scale = 2.5f
+                            }
+                        },
+                    )
+                }
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    translationX = offset.x
+                    translationY = offset.y
+                }
+                .transformable(state = transformState),
+            content = content,
+        )
+    }
+}
+
+@Composable
+private fun FullscreenVideo(
+    videoUrl: String,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val exoPlayer = remember(videoUrl) {
+        ExoPlayer.Builder(context.applicationContext).build().apply {
+            volume = 1f
+            repeatMode = Player.REPEAT_MODE_OFF
+            setMediaItem(ExoMediaItem.fromUri(videoUrl))
+            prepare()
+            playWhenReady = true
+        }
+    }
+
+    DisposableEffect(exoPlayer) {
+        onDispose {
+            exoPlayer.release()
+        }
+    }
+
+    AndroidView(
+        factory = { ctx ->
+            PlayerView(ctx).apply {
+                player = exoPlayer
+                useController = true
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                layoutParams = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                )
+            }
+        },
+        update = { playerView ->
+            playerView.player = exoPlayer
+        },
+        modifier = modifier,
+    )
+}
+
+@Composable
 private fun MediaCell(
     item: MediaItem,
-    single: Boolean,
+    onOpen: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val ratio = item.aspectRatio
-    if (item.isVideo && !item.playableVideoUrl.isNullOrBlank()) {
-        LoopingVideo(
-            videoUrl = item.playableVideoUrl!!,
-            posterUrl = item.displayImageUrl,
-            aspectRatio = ratio,
-            modifier = if (single) {
-                modifier.aspectRatio(ratio)
-            } else {
-                modifier
-            },
-        )
-    } else if (!item.displayImageUrl.isNullOrBlank()) {
-        SubcomposeAsyncImage(
-            model = item.displayImageUrl,
-            contentDescription = item.alt,
-            contentScale = if (single) ContentScale.Fit else ContentScale.Crop,
-            modifier = if (single) {
-                modifier.aspectRatio(ratio)
-            } else {
-                modifier.fillMaxSize()
-            },
-            loading = {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator()
-                }
-            },
-            error = {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                )
-            },
-        )
-    } else {
-        Box(
-            modifier = modifier
-                .then(if (single) Modifier.aspectRatio(ratio) else Modifier.fillMaxSize())
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-        )
+    Box(
+        modifier = modifier
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onOpen,
+            ),
+    ) {
+        if (item.isVideo && !item.playableVideoUrl.isNullOrBlank()) {
+            LoopingVideo(
+                videoUrl = item.playableVideoUrl!!,
+                posterUrl = item.displayImageUrl,
+                aspectRatio = ratio,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else if (!item.displayImageUrl.isNullOrBlank()) {
+            SubcomposeAsyncImage(
+                model = item.displayImageUrl,
+                contentDescription = item.alt,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                loading = {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                },
+                error = {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                    )
+                },
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+            )
+        }
     }
 }
 
@@ -235,7 +421,7 @@ fun LoopingVideo(
             AsyncImage(
                 model = posterUrl,
                 contentDescription = null,
-                contentScale = ContentScale.Fit,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
         }

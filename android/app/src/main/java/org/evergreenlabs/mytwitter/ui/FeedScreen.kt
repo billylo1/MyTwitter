@@ -66,9 +66,6 @@ fun FeedScreen(
         "Synced at ${f.format(date)}"
     }
 
-    var localDetailId by remember { mutableStateOf<String?>(null) }
-    val activeDetailId = tweetDetailId ?: localDetailId
-
     LaunchedEffect(pendingTweetId) {
         val id = router.consumePendingTweet() ?: return@LaunchedEffect
         val inFeed = feed.post(id) != null
@@ -141,7 +138,6 @@ fun FeedScreen(
                             isFavorited = feed.isFavorited(post.authorId) ||
                                 feed.isFavorited(post.repostedById),
                             isHighlighted = highlightTweetId == post.tweetId,
-                            onOpen = { localDetailId = post.tweetId },
                             onAuthor = {
                                 router.openAuthor(post.authorId, post.authorHandle)
                             },
@@ -174,11 +170,10 @@ fun FeedScreen(
         }
     }
 
-    activeDetailId?.let { id ->
+    tweetDetailId?.let { id ->
         TweetDetailSheet(
             tweetId = id,
             onDismiss = {
-                localDetailId = null
                 router.setTweetDetailId(null)
             },
         )

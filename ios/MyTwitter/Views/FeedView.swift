@@ -11,80 +11,84 @@ struct FeedView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: cardSpacing) {
-                        feedHeader
-                            .padding(.horizontal, 16)
-                            .padding(.top, 4)
-                            .padding(.bottom, 2)
+            VStack(spacing: 0) {
+                feedHeader
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.background)
 
-                        if feed.posts.isEmpty {
-                            ContentUnavailableView(
-                                "No posts yet",
-                                systemImage: "bubble.left.and.bubble.right",
-                                description: Text("Pull to sync your following timeline.")
-                            )
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 48)
-                        } else {
-                            ForEach(feed.posts) { post in
-                                PostCardView(
-                                    post: post,
-                                    isLiked: feed.isLiked(post.tweetId),
-                                    isFavorited: feed.isFavorited(post.authorId)
-                                        || feed.isFavorited(post.repostedById),
-                                    isHighlighted: feed.highlightTweetId == post.tweetId,
-                                    onOpen: { detailTweetId = post.tweetId },
-                                    onAuthor: {
-                                        router.openAuthor(
-                                            userId: post.authorId,
-                                            handle: post.authorHandle
-                                        )
-                                    },
-                                    onLike: {
-                                        Task {
-                                            do {
-                                                try await feed.toggleLike(tweetId: post.tweetId)
-                                            } catch let error as FunctionsClientError {
-                                                if case .failedPrecondition(let msg) = error {
-                                                    router.showToast(msg)
-                                                } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: cardSpacing) {
+                            if feed.posts.isEmpty {
+                                ContentUnavailableView(
+                                    "No posts yet",
+                                    systemImage: "bubble.left.and.bubble.right",
+                                    description: Text("Pull to sync your following timeline.")
+                                )
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 48)
+                            } else {
+                                ForEach(feed.posts) { post in
+                                    PostCardView(
+                                        post: post,
+                                        isLiked: feed.isLiked(post.tweetId),
+                                        isFavorited: feed.isFavorited(post.authorId)
+                                            || feed.isFavorited(post.repostedById),
+                                        isHighlighted: feed.highlightTweetId == post.tweetId,
+                                        onAuthor: {
+                                            router.openAuthor(
+                                                userId: post.authorId,
+                                                handle: post.authorHandle
+                                            )
+                                        },
+                                        onLike: {
+                                            Task {
+                                                do {
+                                                    try await feed.toggleLike(tweetId: post.tweetId)
+                                                } catch let error as FunctionsClientError {
+                                                    if case .failedPrecondition(let msg) = error {
+                                                        router.showToast(msg)
+                                                    } else {
+                                                        router.showToast(error.localizedDescription)
+                                                    }
+                                                } catch {
                                                     router.showToast(error.localizedDescription)
                                                 }
-                                            } catch {
-                                                router.showToast(error.localizedDescription)
                                             }
+                                        },
+                                        onLink: { url in
+                                            Task { await router.openTweetURL(url, feed: feed) }
                                         }
-                                    },
-                                    onLink: { url in
-                                        Task { await router.openTweetURL(url, feed: feed) }
-                                    }
-                                )
-                                .padding(.horizontal, 12)
-                                .id(post.tweetId)
+                                    )
+                                    .padding(.horizontal, 12)
+                                    .id(post.tweetId)
+                                }
                             }
                         }
+                        .padding(.top, 8)
+                        .padding(.bottom, 24)
                     }
-                    .padding(.bottom, 24)
-                }
-                .refreshable {
-                    await feed.syncMyTimeline()
-                    if let msg = feed.syncMessage {
-                        router.showToast(msg)
+                    .refreshable {
+                        await feed.syncMyTimeline()
+                        if let msg = feed.syncMessage {
+                            router.showToast(msg)
+                        }
                     }
-                }
-                .onChange(of: scrollTarget) { _, target in
-                    guard let target else { return }
-                    withAnimation {
-                        proxy.scrollTo(target, anchor: .center)
-                    }
-                    feed.highlightTweetId = target
-                    scrollTarget = nil
-                    Task {
-                        try? await Task.sleep(for: .seconds(1.5))
-                        if feed.highlightTweetId == target {
-                            feed.highlightTweetId = nil
+                    .onChange(of: scrollTarget) { _, target in
+                        guard let target else { return }
+                        withAnimation {
+                            proxy.scrollTo(target, anchor: .center)
+                        }
+                        feed.highlightTweetId = target
+                        scrollTarget = nil
+                        Task {
+                            try? await Task.sleep(for: .seconds(1.5))
+                            if feed.highlightTweetId == target {
+                                feed.highlightTweetId = nil
+                            }
                         }
                     }
                 }
@@ -126,11 +130,11 @@ struct FeedView: View {
     private var feedHeader: some View {
         HStack(alignment: .center, spacing: 12) {
             Text("MyTwitter")
-                .font(.title2.weight(.bold))
+                .mtFont(.title2, weight: .bold)
             Spacer(minLength: 8)
             if let label = feed.syncedAtLabel {
                 Text(label)
-                    .font(.caption)
+                    .mtFont(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -138,7 +142,7 @@ struct FeedView: View {
                 router.infoPresented = true
             } label: {
                 Image(systemName: "info.circle")
-                    .font(.title3)
+                    .mtFont(.title3)
             }
             .accessibilityLabel("Info")
         }

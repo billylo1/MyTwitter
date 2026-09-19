@@ -2,7 +2,9 @@ import Foundation
 import FirebaseFirestore
 
 struct MediaItem: Codable, Hashable, Identifiable {
-    var id: String { "\(type)-\(url ?? previewUrl ?? videoUrl ?? UUID().uuidString)" }
+    var id: String {
+        "\(type ?? "media")-\(url ?? previewUrl ?? videoUrl ?? "unknown")"
+    }
     var type: String?
     var url: String?
     var previewUrl: String?

@@ -21,8 +21,6 @@ struct TweetDetailView: View {
                             isLiked: feed.isLiked(post.tweetId),
                             isFavorited: feed.isFavorited(post.authorId)
                                 || feed.isFavorited(post.repostedById),
-                            showHitLink: false,
-                            onOpen: {},
                             onAuthor: {
                                 router.openAuthor(userId: post.authorId, handle: post.authorHandle)
                             },

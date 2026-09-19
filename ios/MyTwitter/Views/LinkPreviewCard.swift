@@ -23,18 +23,18 @@ struct LinkPreviewCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     if let domain = preview.domain, !domain.isEmpty {
                         Text(domain)
-                            .font(.caption2)
+                            .mtFont(.caption2)
                             .foregroundStyle(.secondary)
                     }
                     if let title = preview.title, !title.isEmpty {
                         Text(title)
-                            .font(.subheadline.weight(.semibold))
+                            .mtFont(.subheadline, weight: .semibold)
                             .foregroundStyle(.primary)
                             .lineLimit(2)
                     }
                     if let description = preview.description, !description.isEmpty {
                         Text(description)
-                            .font(.caption)
+                            .mtFont(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                     }

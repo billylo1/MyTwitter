@@ -156,7 +156,7 @@ Rules: [`firestore.rules`](../firestore.rules) — no world-readable posts.
 
 - Same product surface as the SPA: auth gate, feed, like/share, tweet detail, author card (follow/favorite), info sheet (RSS, admin usage/invite), pull-to-refresh, favorites-gated push prompt.
 - Auth: `ASWebAuthenticationSession` + `exchangeAuthHandoff` + Firebase Auth; membership gated on `members/{uid}`.
-- Feed: four Firestore listeners (`posts`, `likes`, `favorites`, `config/public`); Dynamic Type instead of a custom font-scale control.
+- Feed: four Firestore listeners (`posts`, `likes`, `favorites`, `config/public`); in-app text size (Info A−/A+, persisted `mytwitter:fontScale`, default 90%) on top of Dynamic Type.
 - Deep links: `mytwitter://` and Universal Links routed in-app (no WebView).
 
 ### Android native (Jetpack Compose)

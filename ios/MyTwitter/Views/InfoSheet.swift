@@ -5,6 +5,7 @@ struct InfoSheet: View {
     @Environment(AuthService.self) private var auth
     @Environment(FeedStore.self) private var feed
     @Environment(DeepLinkRouter.self) private var router
+    @Environment(FontScaleStore.self) private var fontScale
     @Environment(\.dismiss) private var dismiss
     @State private var rssURL: URL?
     @State private var inviteURL: String?
@@ -16,13 +17,41 @@ struct InfoSheet: View {
             List {
                 Section {
                     Text("Your private following feed from X. Posts sync about every 10 minutes; pull to refresh anytime.")
-                        .font(.subheadline)
+                        .mtFont(.subheadline)
                         .foregroundStyle(.secondary)
                     Text(feed.statusText)
-                        .font(.subheadline)
+                        .mtFont(.subheadline)
                     Text("Version \(AppConfig.versionName) (\(AppConfig.versionCode))")
-                        .font(.caption)
+                        .mtFont(.caption)
                         .foregroundStyle(.secondary)
+                }
+
+                Section {
+                    HStack {
+                        Text("Text size")
+                            .mtFont(.body)
+                        Spacer()
+                        HStack(spacing: 12) {
+                            Button("A−") {
+                                fontScale.bump(-FontScale.step)
+                            }
+                            .disabled(!fontScale.canDecrease)
+                            .accessibilityLabel("Decrease text size")
+
+                            Text(fontScale.percentLabel)
+                                .mtFont(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                                .frame(minWidth: 44)
+                                .accessibilityLabel("Text size \(fontScale.percentLabel)")
+
+                            Button("A+") {
+                                fontScale.bump(FontScale.step)
+                            }
+                            .disabled(!fontScale.canIncrease)
+                            .accessibilityLabel("Increase text size")
+                        }
+                    }
                 }
 
                 if let rssURL {
@@ -35,7 +64,7 @@ struct InfoSheet: View {
                 if auth.member?.isAdmin == true {
                     Section("Admin") {
                         Text(usageLine)
-                            .font(.footnote)
+                            .mtFont(.footnote)
                             .foregroundStyle(.secondary)
                         if feed.publicConfig?.isInvitesEnabled == true {
                             Button {
@@ -51,14 +80,14 @@ struct InfoSheet: View {
                             if let inviteURL {
                                 ShareLink("Share invite", item: inviteURL)
                                 Text(inviteURL)
-                                    .font(.caption2)
+                                    .mtFont(.caption2)
                                     .foregroundStyle(.secondary)
                                     .textSelection(.enabled)
                             }
                         }
                         if let adminMessage {
                             Text(adminMessage)
-                                .font(.footnote)
+                                .mtFont(.footnote)
                                 .foregroundStyle(.red)
                         }
                     }

@@ -52,8 +52,6 @@ fun PostCard(
     isLiked: Boolean,
     isFavorited: Boolean,
     isHighlighted: Boolean = false,
-    showHitLink: Boolean = true,
-    onOpen: () -> Unit,
     onAuthor: () -> Unit,
     onLike: () -> Unit,
     onLink: (String) -> Unit,
@@ -71,15 +69,7 @@ fun PostCard(
     }
 
     Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .then(
-                if (showHitLink) {
-                    Modifier.clickable(onClick = onOpen)
-                } else {
-                    Modifier
-                },
-            ),
+        modifier = modifier.fillMaxWidth(),
     ) {
         if (isFavorited) {
             Box(

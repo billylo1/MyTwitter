@@ -133,8 +133,6 @@ fun TweetDetailSheet(
                         isLiked = feed.isLiked(loaded.tweetId),
                         isFavorited = feed.isFavorited(loaded.authorId) ||
                             feed.isFavorited(loaded.repostedById),
-                        showHitLink = false,
-                        onOpen = {},
                         onAuthor = {
                             router.openAuthor(loaded.authorId, loaded.authorHandle)
                         },

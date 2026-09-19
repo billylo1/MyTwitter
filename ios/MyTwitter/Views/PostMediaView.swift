@@ -9,57 +9,110 @@ struct PostMediaView: View {
         Array(items.prefix(4))
     }
 
+    private let multiGap: CGFloat = 8
+    @State private var fullscreenItem: MediaItem?
+
     var body: some View {
         let count = gridItems.count
         Group {
             if count == 1, let item = gridItems.first {
-                mediaCell(item, contentMode: .fit)
-                    .frame(maxWidth: .infinity, maxHeight: 320, alignment: .center)
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-            } else {
-                LazyVGrid(
-                    columns: [GridItem(.flexible(), spacing: 4), GridItem(.flexible(), spacing: 4)],
-                    spacing: 4
-                ) {
-                    ForEach(Array(gridItems.enumerated()), id: \.offset) { _, item in
-                        mediaCell(item, contentMode: .fill)
+                // Full-width 4:3 frame; image aspect-fills (crops as needed)
+                tappableCell(item) {
+                    Color.clear
+                        .frame(maxWidth: .infinity)
+                        .aspectRatio(4.0 / 3.0, contentMode: .fit)
+                        .overlay {
+                            mediaFill(item)
+                        }
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+            } else if count > 1 {
+                // Web: .media.media-multi → 2-column grid, square cells, object-fit cover
+                multiGrid
+            }
+        }
+        .fullScreenCover(item: $fullscreenItem) { item in
+            MediaFullscreenView(item: item)
+        }
+    }
+
+    /// Mirrors CSS `display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem`.
+    private var multiGrid: some View {
+        let rows = stride(from: 0, to: gridItems.count, by: 2).map { start in
+            Array(gridItems[start..<min(start + 2, gridItems.count)])
+        }
+        return VStack(spacing: multiGap) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: multiGap) {
+                    ForEach(Array(row.enumerated()), id: \.offset) { _, item in
+                        multiCell(item)
+                    }
+                    if row.count == 1 {
+                        Color.clear
                             .frame(maxWidth: .infinity)
-                            .aspectRatio(1, contentMode: .fill)
-                            .clipped()
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .aspectRatio(1, contentMode: .fit)
                     }
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func multiCell(_ item: MediaItem) -> some View {
+        tappableCell(item) {
+            Color.clear
+                .frame(maxWidth: .infinity)
+                .aspectRatio(1, contentMode: .fit)
+                .overlay {
+                    mediaFill(item)
+                }
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    private func tappableCell<Content: View>(
+        _ item: MediaItem,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
+            .contentShape(Rectangle())
+            .onTapGesture {
+                VideoPlaybackCoordinator.pauseAll()
+                fullscreenItem = item
+            }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint("Shows full screen")
     }
 
     @ViewBuilder
-    private func mediaCell(_ item: MediaItem, contentMode: ContentMode) -> some View {
+    private func mediaFill(_ item: MediaItem) -> some View {
         let ratio = item.aspectRatio
         if item.isVideo, let videoURL = item.playableVideoURL {
             LoopingVideoPlayer(url: videoURL, poster: item.displayImageURL, aspectRatio: ratio)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .allowsHitTesting(false)
         } else if let imageURL = item.displayImageURL {
-            Color.clear
-                .aspectRatio(ratio, contentMode: .fit)
-                .overlay {
-                    AsyncImage(url: imageURL) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: contentMode)
-                        case .failure:
-                            Color.secondary.opacity(0.2)
-                        default:
-                            ProgressView()
-                        }
+            AsyncImage(url: imageURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                case .failure:
+                    Color.secondary.opacity(0.2)
+                default:
+                    ZStack {
+                        Color.secondary.opacity(0.12)
+                        ProgressView()
                     }
                 }
-                .clipped()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .allowsHitTesting(false)
         } else {
             Color.secondary.opacity(0.2)
-                .aspectRatio(ratio, contentMode: .fit)
         }
     }
 }
@@ -73,14 +126,13 @@ private struct LoopingVideoPlayer: View {
 
     var body: some View {
         Color.black.opacity(0.12)
-            .aspectRatio(aspectRatio, contentMode: .fit)
             .overlay {
                 if let box {
                     AspectVideoPlayer(player: box.player)
                 } else if let poster {
                     AsyncImage(url: poster) { phase in
                         if case .success(let image) = phase {
-                            image.resizable().aspectRatio(contentMode: .fit)
+                            image.resizable().scaledToFill()
                         } else {
                             Color.black.opacity(0.3)
                         }

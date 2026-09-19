@@ -67,6 +67,11 @@ enum VideoPlaybackCoordinator {
             currentPlayer = nil
         }
     }
+
+    static func pauseAll() {
+        currentPlayer?.pause()
+        currentPlayer = nil
+    }
 }
 
 final class AVPlayerBox {

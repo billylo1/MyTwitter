@@ -42,13 +42,14 @@ struct RootView: View {
             PushPromptSheet()
                 .presentationBackground(.background)
         }
-        .overlay(alignment: .bottom) {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             if let toast = router.toastMessage {
                 Text(toast)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
-                    .padding(.bottom, 24)
+                    .padding(.bottom, 8)
+                    .frame(maxWidth: .infinity)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .onAppear {
                         Task {
